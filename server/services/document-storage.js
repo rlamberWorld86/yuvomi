@@ -983,6 +983,13 @@ export async function readDocumentContent(document, { dmsResolver } = {}) {
     };
   }
   if (document.storage_backend === 'google_drive') {
+    let metadata = document.external_meta;
+    if (typeof metadata === 'string') {
+      try { metadata = JSON.parse(metadata); } catch { metadata = null; }
+    }
+    if (metadata?.drive_sync?.available === false) {
+      throw new StorageError('DOCUMENT_STORAGE_READ_FAILED', 'The document is no longer available in the Google Drive source folder.');
+    }
     try {
       const resolved = await googleDriveStorage.readFile(document.storage_key);
       return {
@@ -1057,6 +1064,10 @@ export async function readDocumentContent(document, { dmsResolver } = {}) {
 
 export async function deleteDocumentContent(document) {
   if (document.storage_backend === 'google_drive') {
+    if (googleDriveStorage.preservesRemoteFiles()) {
+      googleDriveStorage.suppressSyncDocument(document);
+      return;
+    }
     try {
       await googleDriveStorage.deleteFile(document.storage_key);
     } catch (error) {
@@ -1114,6 +1125,7 @@ export async function deleteDocumentContent(document) {
 
 export async function cleanupStagedUpload(staged) {
   try {
+    if (staged.storage_backend === 'google_drive') return await googleDriveStorage.deleteFile(staged.storage_key);
     return await deleteDocumentContent(staged);
   } catch (error) {
     throw new StorageError(

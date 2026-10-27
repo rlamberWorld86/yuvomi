@@ -2192,6 +2192,10 @@ test('document storage config status masks passwords and reports effective env c
     google_drive: {
       configured: false,
       connected: false,
+      sync: {
+        available: false, enabled: false, reconnect_required: false, running: false,
+        folder_id: null, folder_name: null, last_sync: null, last_error: null,
+      },
       account_email: null,
       account_name: null,
       folder_name: 'Yuvomi/Documents',

@@ -431,6 +431,84 @@ function buildDriveSetupHint() {
   return hint;
 }
 
+function buildGoogleDriveSync(drive, reload) {
+  const sync = drive.sync;
+  if (!sync?.available) return null;
+  const section = document.createElement("section");
+  section.className = "settings-provider";
+  const title = document.createElement("h3");
+  title.textContent = t("settings.documentStorageDriveSyncTitle");
+  section.appendChild(title);
+  section.appendChild(buildProviderNote(t("settings.documentStorageDriveSyncDescription")));
+  section.appendChild(buildProviderNote(t("settings.documentStorageDriveSyncPrivacy")));
+  if (sync.reconnect_required) section.appendChild(buildProviderNote(t("settings.documentStorageDriveSyncReconnect")));
+  section.appendChild(createInfoList([
+    { label: t("settings.documentStorageDriveSyncLast"), value: formatSyncTime(sync.last_sync) ?? t("settings.documentStorageNeverTested") },
+    ...(sync.last_error ? [{ label: t("settings.documentStorageLastError"), value: sync.last_error }] : [])
+  ]));
+  const form = document.createElement("form");
+  form.className = "settings-form settings-form--compact";
+  const enabled = document.createElement("input");
+  enabled.type = "checkbox";
+  enabled.checked = Boolean(sync.enabled);
+  const folder = document.createElement("input");
+  folder.type = "text";
+  folder.className = "form-input";
+  folder.value = sync.folder_id || "";
+  folder.autocomplete = "off";
+  const group = document.createElement("div");
+  group.className = "row-carrier settings-group";
+  group.appendChild(createSettingRow({ label: t("settings.documentStorageDriveSyncEnabled"), control: enabled }));
+  group.appendChild(createSettingRow({ label: t("settings.documentStorageDriveSyncFolder"), description: t("settings.documentStorageDriveSyncFolderHint"), control: folder }));
+  form.appendChild(group);
+  const actions = document.createElement("div");
+  actions.className = "settings-form-actions";
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.className = "btn btn--secondary";
+  save.textContent = t("common.save");
+  save.disabled = !drive.connected;
+  actions.appendChild(save);
+  const run = document.createElement("button");
+  run.type = "button";
+  run.className = "btn btn--secondary";
+  run.textContent = t("settings.documentStorageDriveSyncNow");
+  run.disabled = !drive.connected || !sync.enabled || sync.reconnect_required || sync.running;
+  actions.appendChild(run);
+  form.appendChild(actions);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    save.disabled = true;
+    try {
+      await api.put("/documents/storage/google-drive/sync/config", { enabled: enabled.checked, folder_id: folder.value.trim() });
+      showToast(t("settings.documentStorageDriveSyncSaved"), "success");
+      await reloadAfterSave(() => reload());
+    } catch (error) {
+      showToast(error.message ?? t("common.errorGeneric"), "danger");
+      save.disabled = false;
+    }
+  });
+  run.addEventListener("click", async () => {
+    run.disabled = true;
+    save.disabled = true;
+    try {
+      const result = await api.post("/documents/storage/google-drive/sync", {});
+      if (result?.data?.skipped || result?.skipped) {
+        await reloadAfterSave(() => reload());
+        return;
+      }
+      showToast(t("settings.documentStorageDriveSyncSuccess"), "success");
+      await reloadAfterSave(() => reload());
+    } catch (error) {
+      showToast(error.message ?? t("common.errorGeneric"), "danger");
+      run.disabled = false;
+      save.disabled = false;
+    }
+  });
+  section.appendChild(form);
+  return section;
+}
+
 function buildGoogleDriveProvider(data, reload) {
   const drive = data.google_drive ?? {};
   const provider = document.createElement("section");
@@ -542,6 +620,8 @@ function buildGoogleDriveProvider(data, reload) {
     actions.appendChild(disconnect);
   }
   provider.appendChild(actions);
+  const syncSection = buildGoogleDriveSync(drive, reload);
+  if (syncSection) provider.appendChild(syncSection);
   return provider;
 }
 

@@ -362,6 +362,7 @@ export const schemas = {
           type: 'object',
           description: 'A family document. storage_backend is authoritative; storage_provider remains for legacy client compatibility.',
           properties: {
+            drive_available: { type: ['boolean', 'null'], description: 'Last completed Drive scan availability; null for documents without sync metadata.' },
             id: { type: 'integer' },
             name: { type: 'string' },
             description: { type: ['string', 'null'] },
@@ -521,10 +522,19 @@ export const schemas = {
             clear_password: { type: 'boolean' },
           },
         },
+        GoogleDriveSyncStatus: {
+          type: 'object',
+          properties: {
+            available: { type: 'boolean' }, enabled: { type: 'boolean' }, reconnect_required: { type: 'boolean' }, running: { type: 'boolean' },
+            folder_id: { type: ['string', 'null'] }, folder_name: { type: ['string', 'null'] },
+            last_sync: { type: ['string', 'null'] }, last_error: { type: ['string', 'null'] },
+          },
+        },
         GoogleDriveStorageStatus: {
           type: 'object',
           description: 'Google Drive connection state. OAuth tokens, folder IDs, codes and raw provider payloads are never returned.',
           properties: {
+            sync: { $ref: '#/components/schemas/GoogleDriveSyncStatus' },
             configured: { type: 'boolean' },
             connected: { type: 'boolean' },
             account_email: { type: ['string', 'null'], format: 'email' },

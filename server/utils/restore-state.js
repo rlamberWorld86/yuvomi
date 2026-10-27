@@ -69,6 +69,10 @@ export async function waitForExternalJobs() {
  * @type {Set<Promise<void>>}
  */
 const activeWriteRequests = new Set();
+let writeRequestRevision = 0;
+
+// Detect a write that starts and finishes while a remote snapshot is being read.
+export function getWriteRequestRevision() { return writeRequestRevision; }
 
 /**
  * Eine zugelassene schreibende Anfrage bis zu ihrem Ende festhalten.
@@ -78,6 +82,7 @@ const TRACKED = Symbol('yuvomi.restore.trackedWrite');
 
 export function trackWriteRequest(res) {
   if (res[TRACKED]) return;
+  writeRequestRevision++;
   let done;
   const finished = new Promise((resolve) => { done = resolve; });
   const tracked = finished.finally(() => activeWriteRequests.delete(tracked));

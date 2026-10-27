@@ -23,6 +23,7 @@ import { runExternalJob } from './utils/restore-state.js';
 import { createErrorHandler } from './middleware/error-handler.js';
 import { buildOpenApiSpec } from './openapi.js';
 import * as googleCalendar from './services/google-calendar.js';
+import { syncNow as syncGoogleDriveDocuments } from './services/google-drive-storage.js';
 import * as appleCalendar from './services/apple-calendar.js';
 import * as icsSubscription from './services/ics-subscription.js';
 import * as icsExport from './services/ics-export.js';
@@ -892,6 +893,7 @@ app.use(createErrorHandler(log));
 const SYNC_INTERVAL_MS = (parseInt(process.env.SYNC_INTERVAL_MINUTES, 10) || 15) * 60_000;
 
 async function runSync() {
+  runExternalJob(syncGoogleDriveDocuments).catch((error) => logSync.error('Google Drive documents:', error.message));
   // Ein abgelehntes Token (#2019) steht auf der Karte; jeder Takt schriebe
   // sonst denselben Fehler ins Log, ohne dass ein Lauf etwas ändern könnte.
   const { connected: googleConnected, needsReauth: googleNeedsReauth } = googleCalendar.getStatus();

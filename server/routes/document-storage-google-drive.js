@@ -1,4 +1,5 @@
 import express from 'express';
+import { runExternalJob, untrackWriteRequest } from '../utils/restore-state.js';
 import { refuseWhileRestoring } from '../middleware/restore-gate.js';
 import { requireAdmin } from '../auth.js';
 import { createLogger } from '../logger.js';
@@ -53,7 +54,11 @@ router.get('/callback', requireAdmin, refuseWhileRestoring, async (req, res) => 
   delete req.session.googleDriveOAuthState;
 
   try {
-    await googleDriveStorage.handleCallback(code);
+    untrackWriteRequest(res);
+    await runExternalJob(async () => {
+      await Promise.resolve();
+      return googleDriveStorage.handleCallback(code, req.authUserId || req.session.userId);
+    });
     return res.redirect(`${SETTINGS_URL}&drive_ok=1`);
   } catch (callbackError) {
     log.error('GET /callback error:', callbackError);
@@ -61,9 +66,9 @@ router.get('/callback', requireAdmin, refuseWhileRestoring, async (req, res) => 
   }
 });
 
-router.post('/test', requireAdmin, async (_req, res) => {
+router.post('/test', requireAdmin, refuseWhileRestoring, async (_req, res) => {
   try {
-    const data = await googleDriveStorage.testConnection();
+    const data = await runExternalJob(() => googleDriveStorage.testConnection());
     res.json({ data });
   } catch (error) {
     log.error('POST /test error:', error);
@@ -71,14 +76,42 @@ router.post('/test', requireAdmin, async (_req, res) => {
   }
 });
 
-router.delete('/disconnect', requireAdmin, (req, res) => {
+router.delete('/disconnect', requireAdmin, refuseWhileRestoring, async (req, res) => {
   try {
-    googleDriveStorage.disconnect();
-    res.json({ data: googleDriveStorage.getStatus() });
+    untrackWriteRequest(res);
+    const data = await runExternalJob(async () => {
+      await Promise.resolve();
+      googleDriveStorage.disconnect();
+      return googleDriveStorage.getStatus();
+    });
+    res.json({ data });
   } catch (error) {
     log.error('DELETE /disconnect error:', error);
     sendStorageError(res, error);
   }
+});
+
+router.put('/sync/config', requireAdmin, refuseWhileRestoring, async (req, res) => {
+  try {
+    untrackWriteRequest(res);
+    const data = await runExternalJob(async () => {
+      await Promise.resolve();
+      return googleDriveStorage.configureSync(req.body, req.authUserId || req.session.userId);
+    });
+    res.json({ data });
+  } catch (error) { sendStorageError(res, error); }
+});
+
+router.post('/sync', requireAdmin, refuseWhileRestoring, async (_req, res) => {
+  try {
+    untrackWriteRequest(res);
+    const data = await runExternalJob(async () => {
+      await Promise.resolve();
+      return googleDriveStorage.syncNow();
+    });
+    res.json({ data });
+  }
+  catch (error) { sendStorageError(res, error); }
 });
 
 export default router;

@@ -135,6 +135,29 @@ export function documentsPaths() {
         },
       }),
     },
+    '/api/v1/documents/storage/google-drive/sync/config': {
+      put: op({
+        summary: 'Configure inbound Google Drive folder synchronization', tag: 'Documents', admin: true, stateChanging: true,
+        description: 'Validates the source folder and stores a private import owner. Requires explicit server opt-in and a reconnected Drive account with read permission. Does not change the upload destination.',
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['enabled'], properties: { enabled: { type: 'boolean' }, folder_id: { type: 'string', maxLength: 256 } } } } } },
+        responses: {
+          200: { description: 'Updated Drive status', content: { 'application/json': { schema: { $ref: '#/components/schemas/GoogleDriveStorageStatusResponse' } } } },
+          400: { $ref: '#/components/responses/BadRequest' }, 401: { $ref: '#/components/responses/Unauthorized' }, 403: { $ref: '#/components/responses/Forbidden' },
+          409: { description: 'Synchronization is running' }, 502: { description: 'Source folder verification failed' },
+        },
+      }),
+    },
+    '/api/v1/documents/storage/google-drive/sync': {
+      post: op({
+        summary: 'Synchronize existing Google Drive documents', tag: 'Documents', admin: true, stateChanging: true,
+        description: 'Reads the selected folder and subfolders. New rows are private; missing rows are retained as unavailable. No remote files are deleted. Partial listings never trigger missing detection.',
+        responses: {
+          200: { description: 'Import summary or skipped run', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'object', additionalProperties: true } } } } } },
+          400: { $ref: '#/components/responses/BadRequest' }, 401: { $ref: '#/components/responses/Unauthorized' }, 403: { $ref: '#/components/responses/Forbidden' },
+          502: { description: 'Synchronization failed; previous document state preserved' },
+        },
+      }),
+    },
     '/api/v1/documents/folders': {
       get: op({ summary: 'List document folders', tag: 'Documents' }),
       post: op({

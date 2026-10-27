@@ -1813,3 +1813,11 @@ cd .. && rm -rf yuvomi
 > **Warning**: Deleting these folders permanently removes all data including the database.
 > Create a backup first if needed. Only the Portainer stack uses named volumes; there
 > `docker compose down -v` (or deleting the stack incl. volumes) removes the data.
+
+### Optional inbound Google Drive folder synchronization (custom branch)
+
+Set `GOOGLE_DRIVE_SYNC_ENABLED=true` and reconnect the Documents Google account. This adds `drive.readonly` to `drive.file`. The permission covers the account's Drive; the configured folder is an application filter, not an OAuth boundary. In Documents storage settings enter the source folder ID, enable synchronization, save and run a first sync. Upload destination selection is separate.
+
+The selected folder and subfolders are scanned every `SYNC_INTERVAL_MINUTES` (default 15) and on demand. Files appear in one document list; the remote folder hierarchy is not recreated locally. New imported rows are private to the connecting administrator. Remote name/content changes are authoritative; local descriptions, categories, visibility, expiry and archival state are preserved. Docs, Sheets and Slides export as PDF; unsupported Google-native formats and files exceeding the upload limit are skipped. A scan is bounded to 100 folders, 200 pages and 10000 entries. A failed/incomplete scan does not mark files missing.
+
+Remote missing files remain listed as unavailable. In this sync mode, deleting in Yuvomi removes only the local entry and suppresses reimport; it does not delete the remote file. This protection remains after disabling the mode for an already configured instance. Failed new uploads can still clean up the newly created remote object as compensation. Reconnection/configuration changes are blocked while a scan runs. SQLite backups contain metadata and IDs; Drive content still needs its own backup.

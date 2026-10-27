@@ -2215,6 +2215,9 @@ function storageBadgeHtml(doc) {
   if (backend === 'webdav') {
     return `<span class="doc-badge doc-badge--webdav"><i data-lucide="server" aria-hidden="true"></i>${t('documents.storageWebdav')}</span>`;
   }
+  if (backend === 'google_drive' && doc.drive_available === false) {
+    return `<span class="doc-badge doc-badge--unavailable"><i data-lucide="unplug" aria-hidden="true"></i>${t('documents.storageGoogleDriveUnavailable')}</span>`;
+  }
   if (backend === 'google_drive') {
     return `<span class="doc-badge doc-badge--google-drive"><i data-lucide="cloud" aria-hidden="true"></i>${t('documents.storageGoogleDrive')}</span>`;
   }

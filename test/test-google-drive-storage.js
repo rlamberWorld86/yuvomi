@@ -25,7 +25,8 @@ database.exec(`
   CREATE TABLE family_documents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     storage_backend TEXT NOT NULL,
-    storage_key TEXT
+    storage_key TEXT,
+    external_meta TEXT
   );
 `);
 databaseModule._setTestDatabase(database);
@@ -396,4 +397,21 @@ test('disconnect never sweeps sibling document_storage_* keys', async () => {
   assert.equal(cfg('document_storage_selected_backend'), 'webdav');
   assert.equal(cfg('document_storage_webdav_url'), 'https://dav.example.test/remote.php/dav');
   assert.equal(cfg('document_storage_google_driveX_wildcard_trap'), 'must-survive');
+});
+
+test('folder synchronization routes reject members before touching Drive', async (t) => {
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => { req.authRole = 'member'; req.session = {}; next(); });
+  app.use('/', driveStorageRouter);
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const baseUrl = `http://127.0.0.1:${server.address().port}`;
+  for (const [method, pathname] of [['PUT', '/sync/config'], ['POST', '/sync']]) {
+    const response = await fetch(`${baseUrl}${pathname}`, {
+      method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true, folder_id: 'source' }),
+    });
+    assert.equal(response.status, 403, `${method} ${pathname}`);
+  }
 });

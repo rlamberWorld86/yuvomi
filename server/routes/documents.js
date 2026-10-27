@@ -283,7 +283,12 @@ function documentSelect() {
 
 function normalizeDocument(row) {
   if (!row) return null;
+  let driveAvailable = null;
+  if (row.storage_backend === 'google_drive') {
+    try { driveAvailable = JSON.parse(row.external_meta || '{}').drive_sync?.available ?? null; } catch { /* Legacy metadata may be empty. */ }
+  }
   return {
+    drive_available: driveAvailable,
     ...row,
     allowed_member_ids: row.allowed_member_ids
       ? row.allowed_member_ids.split(',').map((id) => Number(id)).filter(Boolean)

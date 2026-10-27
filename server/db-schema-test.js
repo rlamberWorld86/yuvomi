@@ -1575,6 +1575,34 @@ const MIGRATIONS_SQL = {
       SELECT 'saving', key, 'Savings', 5 FROM budget_categories
       WHERE key = 'financial_other';
   `,
+  261: `
+    CREATE TABLE google_drive_sync_tombstones (
+      account_id TEXT NOT NULL,
+      file_id TEXT NOT NULL,
+      PRIMARY KEY (account_id, file_id)
+    );
+    CREATE TRIGGER trg_google_drive_sync_document_insert
+    AFTER INSERT ON family_documents
+    WHEN NEW.storage_backend = 'google_drive'
+      AND (SELECT value FROM sync_config WHERE key = 'document_storage_google_drive_sync_enabled') = 'true'
+      AND length((SELECT value FROM sync_config WHERE key = 'document_storage_google_drive_sync_folder_id')) > 0
+      AND json_type(CASE WHEN json_valid(NEW.external_meta) THEN NEW.external_meta ELSE '{}' END, '$.drive_sync') IS NULL
+    BEGIN
+      UPDATE family_documents
+      SET external_meta = json_set(
+        CASE WHEN json_valid(NEW.external_meta) THEN
+          CASE WHEN json_type(NEW.external_meta) = 'object' THEN NEW.external_meta ELSE '{}' END
+        ELSE '{}' END,
+        '$.drive_sync', json_object(
+          'available', json('true'),
+          'source_folder_id', (SELECT value FROM sync_config WHERE key = 'document_storage_google_drive_sync_folder_id'),
+          'modified_time', NULL
+        )
+      )
+      WHERE id = NEW.id;
+    END;
+
+  `,
 };
 
 export { MIGRATIONS_SQL };
