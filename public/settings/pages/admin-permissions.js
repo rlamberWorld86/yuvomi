@@ -19,7 +19,6 @@ import { confirmModal } from '/components/modal.js';
 import { attachSegmentIndicator } from '/utils/segment-indicator.js';
 import { createRetryState, hintFoldHtml } from '/settings/components.js';
 import { syncLeafEdits, trackLeafEdits } from '/settings/dirty-guard.js';
-import { resolveExtensionLabel } from '/utils/extension-i18n.js';
 import {
   effectiveCapabilityAccess as resolveCapabilityAccess,
   isPermissionDeviation,
@@ -88,7 +87,7 @@ const widgetLabel = (id) => {
   const w = state.catalog?.widgets.find((x) => x.id === id);
   if (w?.labelKey && id.includes(':')) {
     const moduleId = id.split(':')[0];
-    return resolveExtensionLabel(moduleId, { labelKey: w.labelKey, label: w.label, fallback: id });
+    return w.label || id;
   }
   if (w?.label) return w.label;
   return t(WIDGET_LABEL_KEYS[id] || id);

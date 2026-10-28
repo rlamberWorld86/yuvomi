@@ -12,7 +12,6 @@ import { isPushSubscribed } from '/push.js';
 import { moduleIconEl } from '/nav-icons.js';
 import { toastSurface, capPersistentToasts } from '/utils/toast-surface.js';
 import { dashboardRequest, fetchPendingReminders, forgetPendingReminders } from '/utils/dashboard-widgets.js';
-import { wallShowsOn } from '/utils/wall-mode.js';
 
 // --------------------------------------------------------
 // Konfiguration
@@ -434,7 +433,7 @@ async function dismissReminder(id) {
  */
 async function poll({ fresh = false } = {}) {
   try {
-    const wall = wallShowsOn();
+    const wall = false;
     // Geteilt mit der Uebersicht (fetchPendingReminders in utils/dashboard-widgets.js):
     // beim Start ging dieselbe Frage sonst zweimal hinaus. Das Intervall fragt ohnehin neu.
     const data = await fetchPendingReminders(dashboardRequest('/reminders/pending', { wall }), { get: (path) => api.get(path), fresh });
@@ -442,7 +441,6 @@ async function poll({ fresh = false } = {}) {
     // des Abrufs zur Uebersicht gewechselt): die Antwort gehoert nicht auf
     // diese Flaeche. Verworfen, nicht verbucht - der naechste Abruf fragt
     // passend.
-    if (!wall && wallShowsOn()) return;
     const reminders = data.data ?? [];
     updateBellBadge(reminders.length);
     processReminders(reminders);

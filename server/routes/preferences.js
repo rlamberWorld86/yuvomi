@@ -71,7 +71,7 @@ function parseMealTypeNames(raw) {
 }
 
 const DEFAULT_CURRENCY = 'EUR';
-const DEFAULT_APP_NAME = 'Yuvomi';
+const DEFAULT_APP_NAME = 'Lamber Cockpit';
 
 const VALID_DATE_FORMATS = ['mdy', 'dmy', 'ymd', 'mdy_dot', 'dmy_dot', 'dmy_slash', 'dmy_dash', 'ymd_dot', 'ymd_slash'];
 // Default an die übrigen europäischen Defaults (EUR, 24h) und den Client-i18n-

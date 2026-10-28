@@ -1,6 +1,6 @@
 /**
  * Module: Family Documents
- * Purpose: Grid/list document management with local uploads and member visibility.
+ * Purpose: Grid/list document management with Google Drive uploads and member visibility.
  * Dependencies: /api.js, shared modal, i18n
  */
 
@@ -602,7 +602,7 @@ async function loadMetaOptions() {
   try {
     return await applyLatestMetaOptionsResponse(() => api.get('/documents/meta/options'), (res) => {
       state.dmsAccounts = res.data?.dms_accounts || [];
-      state.activeUploadBackend = res.data?.active_upload_backend || 'local';
+      state.activeUploadBackend = res.data?.active_upload_backend || 'google_drive';
       state.isAdmin = res.data?.is_admin === true;
       // Grenzwerte vom Server übernehmen, statt sie im Client zu duplizieren -
       // sonst driften Hinweistext und tatsächliche Annahme auseinander.
@@ -612,7 +612,7 @@ async function loadMetaOptions() {
   } catch {
     // Hier kommt nur die juengste Anfrage an: eine ueberholte scheitert still.
     state.dmsAccounts = [];
-    state.activeUploadBackend = 'local';
+    state.activeUploadBackend = 'google_drive';
     state.isAdmin = false;
     state.maxFileSize = maxUploadBytes();
     state.allowedMimeTypes = [];

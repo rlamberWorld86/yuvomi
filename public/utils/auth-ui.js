@@ -19,7 +19,7 @@
 import { esc } from '/utils/html.js';
 import { brandMarkSvg } from '/utils/brand-mark.js';
 
-const DEFAULT_APP_NAME = 'Yuvomi';
+const DEFAULT_APP_NAME = 'Lamber Cockpit';
 const APP_NAME_STORAGE_KEY = 'yuvomi-app-name';
 
 /** Der Name, unter dem dieser Haushalt die App fuehrt (zuletzt vom Server gemeldet). */

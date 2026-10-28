@@ -338,18 +338,17 @@ test('Google Drive has a distinct upload label, icon and storage badge', () => {
   assert.doesNotMatch(rule.body, /#[0-9a-f]{3,8}/i);
 });
 
-test('Upload-Ziel nutzt die lesbare gemeinsame Formularsteuerung', () => {
+test('document storage settings expose Google Drive as the sole destination', () => {
   const storageSettings = read('../public/settings/pages/documents-storage.js');
-  assert.match(storageSettings, /select\.className\s*=\s*(['"])form-input\1/);
-  assert.doesNotMatch(storageSettings, /select\.className\s*=\s*(['"])form-select\1/);
+  assert.match(storageSettings, /content: buildGoogleDriveProvider/);
+  assert.doesNotMatch(storageSettings, /buildDestinationForm|buildConnectionForm|availableBackends/);
 });
 
-test('nicht konfigurierte Upload-Ziele sind nicht auswählbar', () => {
+test('Drive setup and synchronization remain available in storage settings', () => {
   const storageSettings = read('../public/settings/pages/documents-storage.js');
-  assert.match(storageSettings, /const availableBackends\s*=\s*new Set\(\[(['"])local\1\]\)/);
-  assert.match(storageSettings, /data\.enabled\s*&&\s*data\.configured/);
-  assert.match(storageSettings, /drive\.configured\s*&&\s*drive\.connected/);
-  assert.match(storageSettings, /option\.disabled\s*=\s*!availableBackends\.has\(backend\)/);
+  assert.ok(storageSettings.includes('if (!drive.configured) provider.appendChild(buildDriveSetupHint'));
+  assert.ok(storageSettings.includes('save.disabled = !drive.connected'));
+  assert.ok(storageSettings.includes('google-drive/sync/config'));
 });
 
 test('die Speicher-Einstellungen sind von der Seite aus verlinkt — nur für Admins', () => {

@@ -3187,151 +3187,11 @@ router.get('/users', requireAuth, (req, res) => {
   }
 });
 
-router.get('/api-tokens', requireAuth, requireAdmin, (req, res) => {
-  try {
-    const rows = db.get().prepare(`
-      SELECT t.*, ${apiTokenUsableSql('t')} AS usable,
-        creator.display_name AS creator_name,
-        subject.id AS effective_subject_user_id,
-        subject.display_name AS subject_name
-      FROM api_tokens t
-      LEFT JOIN users creator ON creator.id = t.created_by
-      LEFT JOIN users subject ON subject.id = COALESCE(t.subject_user_id, t.created_by)
-      ORDER BY t.created_at DESC
-    `).all();
-    // KONTEN, keine Mitgliederliste (#1207): ein Admin stellt ein Token fuer
-    // ein Konto aus, auch fuer das einer Haushaltshilfe. Nur Gaeste fehlen,
-    // weil POST /api-tokens sie als Subjekt abweist - dieselbe Grenze ueber
-    // access_scope. Die Liste steht deshalb in der Allowlist des Guards.
-    const subjects = db.get().prepare(`
-      SELECT u.id, u.username, u.display_name
-      FROM users u
-      WHERE ${accessScopeSql('u')} = 'family'
-        -- Kein Token fuer einen Ehemaligen (#1381): POST weist ihn ebenfalls ab.
-        AND ${activeAccountSql('u')}
-      ORDER BY ${memberOrderSql('u')}
-    `).all();
-    res.json({ data: rows.map(publicApiToken), subjects });
-  } catch (err) {
-    log.error('API token list error:', err);
-    res.status(500).json({ error: 'Internal server error.', code: 500 });
-  }
-});
 
-router.post('/api-tokens', requireAuth, requireAdmin, csrfMiddleware, (req, res) => {
-  try {
-    const name = String(req.body.name || '').trim();
-    const expiresAt = req.body.expires_at ? String(req.body.expires_at).trim() : null;
 
-    if (!name) return res.status(400).json({ error: 'Token name is required.', code: 400 });
-    if (name.length > 100) return res.status(400).json({ error: 'Token name may be at most 100 characters long.', code: 400 });
-    if (expiresAt && Number.isNaN(Date.parse(expiresAt))) {
-      return res.status(400).json({ error: 'expires_at must be a valid ISO date/time.', code: 400 });
-    }
-    if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
-      return res.status(400).json({ error: 'Expiration date must be in the future.', code: 400 });
-    }
 
-    // scopes: fehlend/null → uneingeschränktes Token (Voll-Zugriff, Default wie bisher).
-    // Explizit gesetzt → Least-Privilege-Allowlist; muss mind. einen gültigen Scope
-    // enthalten, ungültige/unbekannte Einträge werden abgewiesen (kein stilles Verwerfen).
-    let serializedScopes = null;
-    if (req.body.scopes !== undefined && req.body.scopes !== null) {
-      if (!Array.isArray(req.body.scopes)) {
-        return res.status(400).json({ error: 'scopes must be an array of "module:read"/"module:write" strings.', code: 400 });
-      }
-      const normalized = normalizeScopes(req.body.scopes);
-      if (normalized.length !== req.body.scopes.length) {
-        return res.status(400).json({ error: 'scopes contains unknown or duplicate entries.', code: 400 });
-      }
-      if (normalized.length === 0) {
-        return res.status(400).json({ error: 'Provide at least one scope, or omit scopes for full access.', code: 400 });
-      }
-      serializedScopes = serializeScopes(normalized);
-    }
 
-    const token = API_TOKEN_PREFIX + crypto.randomBytes(32).toString('base64url');
-    const tokenHash = hashApiToken(token);
-    const tokenPrefix = token.slice(0, 12);
-    const normalizedExpiresAt = expiresAt ? new Date(expiresAt).toISOString() : null;
-    let subjectUserId = req.authUserId;
-    if (req.body.subject_user_id !== undefined && req.body.subject_user_id !== null) {
-      subjectUserId = Number(req.body.subject_user_id);
-      if (!Number.isSafeInteger(subjectUserId) || subjectUserId < 1) {
-        return res.status(400).json({ error: 'subject_user_id must be a valid user ID.', code: 400 });
-      }
-    }
-    const subject = db.get().prepare(`
-      SELECT u.id,
-        EXISTS(SELECT 1 FROM split_expense_guest_users sg WHERE sg.user_id = u.id) AS is_split_guest
-      FROM users u WHERE u.id = ?
-    `).get(subjectUserId);
-    if (!subject) return res.status(400).json({ error: 'Token subject user was not found.', code: 400 });
-    if (subject.is_split_guest) {
-      return res.status(400).json({ error: 'A split-expense guest cannot be an API token subject.', code: 400 });
-    }
-    // EIN DISPLAY IST NUR UEBER SEIN GERAET ERREICHBAR - auch hier (#1208).
-    //
-    // Ohne diese Zeile waere der Weg drumherum offen: ein Administrator traegt
-    // die Display-Id als `subject_user_id` ein und bekommt ein API-Token auf
-    // dieses Konto. Der Token-Zweig in `requireAuth` loest Rechte OHNE
-    // `isDisplay` auf - die feste Leseliste aus display-scopes.js greift also
-    // nicht, und ein ungescoptes Token haette die vollen Schreibrechte eines
-    // gewoehnlichen Mitglieds unter dem Namen des Wandtabletts. Ein Konto, das
-    // sich nicht anmelden kann, darf auch kein Credential neben seinem Geraet
-    // bekommen; dieselbe Erwaegung wie beim Ausgaben-Gast eine Zeile darueber.
-    if (isDisplayAccount(subjectUserId, { db: db.get() })) {
-      return res.status(400).json({ error: 'A display cannot be an API token subject.', code: 400 });
-    }
-    // Und ein Ehemaliger handelt nicht mehr (#1381): die Anmeldung wiese das
-    // Token ohnehin ab, also entsteht es gar nicht erst.
-    if (!isActiveAccount(subjectUserId, { db: db.get() })) {
-      return res.status(400).json({
-        error: 'A deactivated account cannot be an API token subject.', code: 400, reason: 'account_deactivated',
-      });
-    }
 
-    const result = db.get().prepare(`
-      INSERT INTO api_tokens (name, token_hash, token_prefix, created_by, subject_user_id, expires_at, scopes)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(name, tokenHash, tokenPrefix, req.authUserId, subjectUserId, normalizedExpiresAt, serializedScopes);
-
-    const row = db.get().prepare(`
-      SELECT t.*, ${apiTokenUsableSql('t')} AS usable,
-        creator.display_name AS creator_name,
-        subject.id AS effective_subject_user_id,
-        subject.display_name AS subject_name
-      FROM api_tokens t
-      LEFT JOIN users creator ON creator.id = t.created_by
-      LEFT JOIN users subject ON subject.id = COALESCE(t.subject_user_id, t.created_by)
-      WHERE t.id = ?
-    `).get(result.lastInsertRowid);
-
-    res.status(201).json({ data: publicApiToken(row), token });
-  } catch (err) {
-    log.error('API token creation error:', err);
-    res.status(500).json({ error: 'Internal server error.', code: 500 });
-  }
-});
-
-router.delete('/api-tokens/:id', requireAuth, requireAdmin, csrfMiddleware, (req, res) => {
-  try {
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid token ID.', code: 400 });
-
-    const result = db.get().prepare(`
-      UPDATE api_tokens
-      SET revoked_at = COALESCE(revoked_at, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-      WHERE id = ?
-    `).run(id);
-
-    if (result.changes === 0) return res.status(404).json({ error: 'API token not found.', code: 404 });
-    res.json({ ok: true });
-  } catch (err) {
-    log.error('API token revocation error:', err);
-    res.status(500).json({ error: 'Internal server error.', code: 500 });
-  }
-});
 
 /**
  * POST /api/v1/auth/api-tokens/:id/remove
@@ -3349,30 +3209,7 @@ router.delete('/api-tokens/:id', requireAuth, requireAdmin, csrfMiddleware, (req
  * Anweisung, damit zwischen beiden nichts liegt.
  * Response: { ok: true }
  */
-router.post('/api-tokens/:id/remove', requireAuth, requireAdmin, csrfMiddleware, (req, res) => {
-  try {
-    // Strenger als `parseInt` beim Widerruf darueber: `12abc` ist keine Id.
-    // Eine Route, die endgueltig loescht, raet nicht, welche Zeile gemeint war.
-    const id = /^\d+$/.test(req.params.id) ? Number(req.params.id) : NaN;
-    if (!Number.isSafeInteger(id)) return res.status(400).json({ error: 'Invalid token ID.', code: 400 });
 
-    const result = db.get().prepare(`
-      DELETE FROM api_tokens WHERE id = ? AND NOT ${apiTokenUsableSql('api_tokens')}
-    `).run(id);
-    if (result.changes > 0) return res.json({ ok: true });
-
-    const exists = db.get().prepare('SELECT 1 FROM api_tokens WHERE id = ?').get(id);
-    if (!exists) return res.status(404).json({ error: 'API token not found.', code: 404 });
-    return res.status(409).json({
-      error: 'An active API token cannot be removed. Revoke it first.',
-      code: 409,
-      reason: 'api_token_active',
-    });
-  } catch (err) {
-    log.error('API token removal error:', err);
-    res.status(500).json({ error: 'Internal server error.', code: 500 });
-  }
-});
 
 /**
  * Liest ein Konto so, wie die Verwaltungsoberflaeche es braucht: oeffentliche

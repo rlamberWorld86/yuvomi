@@ -10,7 +10,7 @@ import { esc } from '/utils/html.js';
 import { authHeroHtml, authErrorHtml, wirePasswordToggle, showAuthError } from '/utils/auth-ui.js';
 
 const VERSION_URL = '/api/v1/version';
-const DEFAULT_APP_NAME = 'Yuvomi';
+const DEFAULT_APP_NAME = 'Lamber Cockpit';
 const APP_NAME_STORAGE_KEY = 'yuvomi-app-name';
 
 function getStoredAppName() {

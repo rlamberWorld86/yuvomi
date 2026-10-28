@@ -15,8 +15,8 @@ const PDF_EXPORT_TYPES = new Set(['application/vnd.google-apps.document', 'appli
 let syncRunning = false;
 let configMutationRunning = false;
 let activeUploads = 0;
-export function isSyncAvailable() { return process.env.GOOGLE_DRIVE_SYNC_ENABLED === 'true'; }
-export function preservesRemoteFiles() { return isSyncAvailable() || Boolean(cfgGet('sync_folder_id')); }
+export function isSyncAvailable() { return true; }
+export function preservesRemoteFiles() { return true; }
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const APP_FOLDER_NAME = 'Yuvomi';
 const DOCUMENTS_FOLDER_NAME = 'Documents';
@@ -332,7 +332,6 @@ async function handleCallbackLocked(code, ownerId) {
     }
   }
 
-  const folder = await ensureAppFolder(drive, { persist: false });
   assertBindingUnchanged(binding);
   db.get().transaction(() => {
     if (tokens.access_token) cfgSet('access_token', tokens.access_token);
@@ -340,8 +339,6 @@ async function handleCallbackLocked(code, ownerId) {
     cfgSet('refresh_token', tokens.refresh_token);
     if (tokens.expiry_date) cfgSet('token_expiry', tokens.expiry_date);
     else cfgDel('token_expiry');
-    cfgSet('folder_id', folder.id);
-    cfgSet('folder_name', folder.name);
     cfgSet('account_id', account.permissionId);
     cfgSet('granted_scopes', tokens.scope || '');
     if (ownerId) cfgSet('sync_owner_id', ownerId);
@@ -380,7 +377,6 @@ export function getStatus() {
     configured
     && cfgGet('refresh_token')
     && cfgGet('account_id')
-    && cfgGet('folder_id')
   );
   const documentCount = driveDocumentCount();
   return {
@@ -389,11 +385,11 @@ export function getStatus() {
     sync: getSyncStatus(),
     account_email: cfgGet('account_email'),
     account_name: cfgGet('account_name'),
-    folder_name: cfgGet('sync_enabled') === 'true' && cfgGet('sync_folder_id') ? cfgGet('sync_folder_name') : cfgGet('folder_name') || DISPLAY_FOLDER_NAME,
+    folder_name: cfgGet('sync_folder_name') || cfgGet('folder_name') || null,
     document_count: documentCount,
     last_test: cfgGet('last_test'),
     last_error: configurationError?.message || cfgGet('last_error'),
-    can_disconnect: documentCount === 0 && selectedBackend() !== 'google_drive',
+    can_disconnect: documentCount === 0,
   };
 }
 
@@ -407,14 +403,13 @@ export async function uploadFile(options = {}) {
 async function uploadFileLocked({ buffer, mime = 'application/octet-stream', originalName } = {}) {
   const content = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || '');
   const drive = createDrive();
-  const syncDestination = cfgGet('sync_enabled') === 'true' && cfgGet('sync_folder_id');
-  const folder = syncDestination
-    ? { id: syncDestination }
-    : await ensureAppFolder(drive);
+  const syncDestination = cfgGet('sync_folder_id');
+  if (!syncDestination) throw new GoogleDriveStorageError('DOCUMENT_STORAGE_NOT_CONFIGURED', 'Configure the Google Drive source folder before uploading documents.');
+  const folder = { id: syncDestination };
   try {
     const response = await drive.files.create({
       requestBody: {
-        name: syncDestination ? safeOriginalName(originalName) : `${randomUUID()}-${safeOriginalName(originalName)}`,
+        name: safeOriginalName(originalName),
         parents: [folder.id],
       },
       media: {
@@ -470,46 +465,22 @@ export async function readFile(fileId) {
   }
 }
 
-export async function deleteFile(fileId) {
-  const drive = createDrive();
-  try {
-    await drive.files.delete({ fileId });
-  } catch (error) {
-    if (isNotFound(error)) return;
-    throw new GoogleDriveStorageError(
-      'DOCUMENT_STORAGE_DELETE_FAILED',
-      'The Google Drive document could not be deleted.',
-      { cause: error }
-    );
-  }
-}
+// Drive files are owned by the user and are never deleted by the application.
+export async function deleteFile() {}
 
 export async function testConnection() {
-  const expected = Buffer.from(`yuvomi-google-drive-test:${randomUUID()}`);
-  let fileId = null;
   try {
-    fileId = await uploadFile({
-      buffer: expected,
-      mime: 'application/octet-stream',
-      originalName: '.connection-test.bin',
-    });
-    const actual = await readFile(fileId);
-    if (!actual.buffer.equals(expected)) {
-      throw new Error('Google Drive roundtrip verification failed.');
+    const drive = createDrive();
+    await drive.about.get({ fields: 'user(permissionId)' });
+    const folderId = cfgGet('sync_folder_id');
+    if (folderId) {
+      const folder = (await drive.files.get({ fileId: folderId, fields: 'id,mimeType,trashed' })).data;
+      if (folder.mimeType !== FOLDER_MIME || folder.trashed) throw new Error('Source folder unavailable.');
     }
-    await deleteFile(fileId);
-    fileId = null;
     cfgSet('last_test', new Date().toISOString());
     cfgDel('last_error');
     return { ok: true };
   } catch (error) {
-    if (fileId) {
-      try {
-        await deleteFile(fileId);
-      } catch {
-        // Preserve the primary test failure.
-      }
-    }
     if (
       error instanceof GoogleDriveStorageError
       && (
@@ -536,12 +507,6 @@ export function disconnect() {
     throw new GoogleDriveStorageError(
       'DOCUMENT_STORAGE_CONFIG_PROTECTED',
       'Google Drive cannot be disconnected while Drive-backed documents exist.'
-    );
-  }
-  if (selectedBackend() === 'google_drive') {
-    throw new GoogleDriveStorageError(
-      'DOCUMENT_STORAGE_CONFIG_PROTECTED',
-      'Select another upload destination before disconnecting Google Drive.'
     );
   }
   // Escape LIKE wildcards in the prefix so each literal underscore stays literal;
@@ -655,7 +620,7 @@ export async function syncNow() {
         const native = file.mimeType?.startsWith('application/vnd.google-apps.');
         if ((native && !PDF_EXPORT_TYPES.has(file.mimeType)) || Number(file.size) > MAX_READ_BYTES) { counts.skipped++; continue; }
         if (database.prepare('SELECT 1 FROM google_drive_sync_tombstones WHERE account_id = ? AND file_id = ?').get(accountId, file.id)) { counts.skipped++; continue; }
-        const existing = database.prepare("SELECT id, external_meta FROM family_documents WHERE storage_backend = 'google_drive' AND storage_key = ?").get(file.id);
+        const existing = database.prepare("SELECT id, name, original_name, external_meta FROM family_documents WHERE storage_backend = 'google_drive' AND storage_key = ?").get(file.id);
         let meta = {};
         try { meta = JSON.parse(existing?.external_meta || '{}') || {}; } catch { /* Old metadata may be malformed. */ }
         const externalMeta = JSON.stringify({ ...meta, drive_sync: { available: true, source_folder_id: root, modified_time: file.modifiedTime || null } });
@@ -665,7 +630,7 @@ export async function syncNow() {
         const size = Number(file.size) || 0;
         if (existing) {
           database.prepare("UPDATE family_documents SET name = ?, original_name = ?, mime_type = ?, file_size = ?, external_meta = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?")
-            .run(name, original, mime, size, externalMeta, existing.id);
+            .run(existing.name === existing.original_name ? name : existing.name, original, mime, size, externalMeta, existing.id);
           counts.updated++;
         } else {
           database.prepare("INSERT INTO family_documents (name,original_name,mime_type,file_size,content_data,storage_provider,storage_backend,storage_key,created_by,visibility,external_meta) VALUES (?,?,?,?,?,'external','google_drive',?,?,'private',?)")

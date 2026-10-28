@@ -1,3 +1,5 @@
+export const RETIRED_MODULES = Object.freeze(['rewards', 'schedule', 'inventory', 'housekeeping', 'waste', 'health', 'budget']);
+
 /**
  * Modul: Haushaltsweit abgeschaltete Module
  * Zweck: EINE Lesart von `sync_config.disabled_modules` fuer alle Server-Stellen,
@@ -29,12 +31,12 @@
  */
 export function householdDisabledModules(database) {
   const row = database.prepare("SELECT value FROM sync_config WHERE key = 'disabled_modules'").get();
-  if (!row?.value) return new Set();
+  if (!row?.value) return new Set(RETIRED_MODULES);
   try {
     const parsed = JSON.parse(row.value);
-    return new Set(Array.isArray(parsed) ? parsed.filter((m) => typeof m === 'string') : []);
+    return new Set([...RETIRED_MODULES, ...(Array.isArray(parsed) ? parsed.filter((m) => typeof m === 'string') : [])]);
   } catch {
-    return new Set();
+    return new Set(RETIRED_MODULES);
   }
 }
 

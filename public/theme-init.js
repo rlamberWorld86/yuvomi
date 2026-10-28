@@ -68,33 +68,6 @@
   } catch (e) { /* ohne Metas bleibt es beim Systemverhalten */ }
 })();
 
-// DER WAND-MODUS GEHOERT ZUM ERSTZUSTAND, ALSO HIERHER.
-//
-// Er blendet Sidebar und Tab-Leiste aus und uebernimmt die ganze Flaeche. Ohne
-// diesen Block laedt ein Wandtablet sichtbar erst das normale Dashboard und
-// klappt die Navigation dann weg - genau das Flackern, gegen das der Theme-Block
-// darueber existiert, nur eine Etage groesser. Der Router haelt es danach beim
-// Routenwechsel nach (utils/wall-mode.js, syncWallMode), das hier ist der
-// Anfangszustand.
-//
-// Die Werte stehen als Literale da und nicht als Import: dieses Skript laeuft
-// als klassisches <script> im <head>, vor jedem Modul. Die eine Quelle bleibt
-// `utils/wall-mode.js`; dass die beiden nicht auseinanderlaufen, haelt ein Guard
-// in test-frontend-audit.js.
-(function () {
-  try {
-    if (localStorage.getItem('yuvomi-wall-mode') !== '1') return;
-    if (location.pathname !== '/') return;
-    document.documentElement.setAttribute('data-wall-mode', '');
-    var hour = new Date().getHours();
-    if (hour >= 22 || hour < 6) {
-      document.documentElement.setAttribute('data-wall-night', '');
-      // Nachts erzwungen dunkel - ohne `yuvomi-theme` anzufassen.
-      document.documentElement.setAttribute('data-theme', 'dark');
-    }
-  } catch (e) { /* Storage nicht verfuegbar → kein Wand-Modus in dieser Sitzung */ }
-})();
-
 // DIE LEINWAND VOR DEM CSS FOLGT DER WAHL.
 //
 // `<meta name="color-scheme" content="light dark">` laesst das System
@@ -109,22 +82,4 @@
     var meta = document.querySelector('meta[name="color-scheme"]');
     if (meta && (theme === 'light' || theme === 'dark')) meta.setAttribute('content', theme);
   } catch (e) { /* ohne Meta bleibt es beim System */ }
-})();
-
-// THE SCREENSAVER DELAY BELONGS TO THE INITIAL STATE TOO (#885).
-//
-// components/photo-screensaver.js arms its idle timer as soon as somebody is
-// signed in (#1919), from `data-screensaver-idle`. On a page that loads into a
-// running session that is the first answer of /auth/me. Set here, before any
-// module, so the first idle period already uses the delay chosen on this device. Only a step from
-// utils/screensaver-idle.js is applied; anything else leaves the attribute off
-// and the component keeps its five-minute default. The key and the steps are
-// literals because this classic script cannot import - a guard in
-// test-frontend-audit.js keeps them in step with the module.
-(function () {
-  try {
-    var idle = localStorage.getItem('yuvomi-screensaver-idle');
-    if ([60, 120, 300, 600, 900].indexOf(Number(idle)) === -1) return;
-    document.documentElement.setAttribute('data-screensaver-idle', String(Number(idle)));
-  } catch (e) { /* Storage nicht verfuegbar → Standardwert */ }
 })();

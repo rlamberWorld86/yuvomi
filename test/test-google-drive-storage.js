@@ -169,7 +169,7 @@ test('Drive OAuth falls back only when both Drive-specific credentials are absen
   assert.match(session.googleDriveOAuthState, /^[a-f0-9]{64}$/);
   assert.equal(fake.state.authOptions.access_type, 'offline');
   assert.equal(fake.state.authOptions.prompt, 'consent');
-  assert.deepEqual(fake.state.authOptions.scope, ['https://www.googleapis.com/auth/drive.file']);
+  assert.deepEqual(fake.state.authOptions.scope, ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive.readonly']);
   assert.equal('include_granted_scopes' in fake.state.authOptions, false);
   assert.deepEqual(fake.state.clients[0].config, {
     clientId: 'calendar-client',
@@ -249,12 +249,12 @@ test('partial Drive-specific credentials fail closed in status and routes', asyn
   }
 });
 
-test('callback validates the account, creates and reuses Yuvomi/Documents, and never selects Drive', async () => {
+test('callback validates the account without creating folders or changing calendar credentials', async () => {
   const first = await driveStorage.handleCallback('code');
   assert.equal(first.connected, true);
   assert.equal(first.account_email, 'a@example.test');
-  assert.equal(first.folder_name, 'Yuvomi/Documents');
-  assert.equal(fake.state.foldersCreated, 2);
+  assert.equal(first.folder_name, null);
+  assert.equal(fake.state.foldersCreated, 0);
   assert.equal(cfg('document_storage_selected_backend'), null);
   assert.equal(cfg('google_access_token'), 'calendar-access');
   assert.equal(cfg('google_refresh_token'), 'calendar-refresh');
@@ -266,12 +266,14 @@ test('callback validates the account, creates and reuses Yuvomi/Documents, and n
     expiry_date: 2_000_000_100_000,
   };
   await driveStorage.handleCallback('second-code');
-  assert.equal(fake.state.foldersCreated, 2);
+  assert.equal(fake.state.foldersCreated, 0);
   assert.equal(cfg('document_storage_google_drive_refresh_token'), 'drive-refresh-b');
 });
 
 test('callback requires a refresh token and preserves existing credentials on account mismatch', async () => {
   await driveStorage.handleCallback('first');
+  setCfg('document_storage_google_drive_sync_folder_id', 'source');
+  fake.state.files.set('source', { id: 'source', name: 'Source', mimeType: 'application/vnd.google-apps.folder' });
   const fileId = await driveStorage.uploadFile({
     buffer: Buffer.from('existing'),
     mime: 'text/plain',
@@ -301,6 +303,8 @@ test('callback requires a refresh token and preserves existing credentials on ac
 
 test('upload, streaming read, token refresh, delete and missing delete are supported', async () => {
   await driveStorage.handleCallback('code');
+  setCfg('document_storage_google_drive_sync_folder_id', 'source');
+  fake.state.files.set('source', { id: 'source', name: 'Source', mimeType: 'application/vnd.google-apps.folder' });
   const id = await driveStorage.uploadFile({
     buffer: Buffer.from('Drive bytes'),
     mime: 'text/plain',
@@ -318,12 +322,14 @@ test('upload, streaming read, token refresh, delete and missing delete are suppo
   assert.equal(cfg('document_storage_google_drive_token_expiry'), '12345');
 
   await driveStorage.deleteFile(id);
-  assert.equal(fake.state.files.has(id), false);
+  assert.equal(fake.state.files.has(id), true);
   await driveStorage.deleteFile('already-missing');
 });
 
 test('read rejects metadata and streamed content above 5 MiB', async () => {
   await driveStorage.handleCallback('code');
+  setCfg('document_storage_google_drive_sync_folder_id', 'source');
+  fake.state.files.set('source', { id: 'source', name: 'Source', mimeType: 'application/vnd.google-apps.folder' });
   const folderId = cfg('document_storage_google_drive_folder_id');
   fake.state.files.set('too-large', {
     id: 'too-large',
@@ -352,8 +358,10 @@ test('read rejects metadata and streamed content above 5 MiB', async () => {
   );
 });
 
-test('connection test performs a verified roundtrip and cleans up', async () => {
+test('connection test reads account and folder without writing files', async () => {
   await driveStorage.handleCallback('code');
+  setCfg('document_storage_google_drive_sync_folder_id', 'source');
+  fake.state.files.set('source', { id: 'source', name: 'Source', mimeType: 'application/vnd.google-apps.folder' });
   const before = fake.state.files.size;
   assert.deepEqual(await driveStorage.testConnection(), { ok: true });
   assert.equal(fake.state.files.size, before);
@@ -361,14 +369,10 @@ test('connection test performs a verified roundtrip and cleans up', async () => 
   assert.equal(cfg('document_storage_google_drive_last_error'), null);
 });
 
-test('disconnect is blocked by selection or rows and clears only Drive keys when safe', async () => {
+test('disconnect is blocked by rows and clears only Drive keys when safe', async () => {
   await driveStorage.handleCallback('code');
-  setCfg('document_storage_selected_backend', 'google_drive');
-  assert.throws(
-    () => driveStorage.disconnect(),
-    (error) => error.storageCode === 'DOCUMENT_STORAGE_CONFIG_PROTECTED'
-  );
-  database.prepare('DELETE FROM sync_config WHERE key = ?').run('document_storage_selected_backend');
+  setCfg('document_storage_google_drive_sync_folder_id', 'source');
+  fake.state.files.set('source', { id: 'source', name: 'Source', mimeType: 'application/vnd.google-apps.folder' });
   database.prepare("INSERT INTO family_documents (storage_backend, storage_key) VALUES ('google_drive', 'x')").run();
   assert.throws(
     () => driveStorage.disconnect(),
@@ -382,6 +386,8 @@ test('disconnect is blocked by selection or rows and clears only Drive keys when
 
 test('disconnect never sweeps sibling document_storage_* keys', async () => {
   await driveStorage.handleCallback('code');
+  setCfg('document_storage_google_drive_sync_folder_id', 'source');
+  fake.state.files.set('source', { id: 'source', name: 'Source', mimeType: 'application/vnd.google-apps.folder' });
   // Selecting another backend is what lets disconnect proceed.
   setCfg('document_storage_selected_backend', 'webdav');
   setCfg('document_storage_webdav_url', 'https://dav.example.test/remote.php/dav');

@@ -11,7 +11,6 @@ import express from 'express';
 import * as db from '../db.js';
 import { createLogger } from '../logger.js';
 import { requireAdmin } from '../auth.js';
-import { listModules } from '../services/modules.js';
 import { accessScopeSql, activeAccountSql, householdMemberSql, memberOrderSql } from '../services/household-members.js';
 import {
   permissionCatalog,
@@ -53,7 +52,6 @@ router.use(requireAdmin);
  */
 router.get('/catalog', async (req, res) => {
   try {
-    await listModules({ admin: true });
     const catalog = permissionCatalog();
     const members = db.get().prepare(`
       SELECT id, display_name, username, avatar_color, avatar_data, role, family_role,

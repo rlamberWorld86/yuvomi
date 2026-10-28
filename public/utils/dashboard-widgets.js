@@ -41,7 +41,7 @@ import { EVENT_LIMIT_DEFAULT, clampEventLimit } from './dashboard-event-limit.js
  * unten), eine Umsortierung schaltet nichts mehr um. Die Default-Position ist
  * aber weiter der Ort, an dem ein Neuzugang erscheint, und der Guard
  * „eine fehlende Id landet an ihrer Default-Position" haelt das fest. */
-export const WIDGET_IDS = ['tasks', 'calendar', 'meals', 'shopping', 'pantry', 'birthdays', 'countdown', 'budget', 'rewards', 'health', 'cycle', 'fasting', 'nutrition', 'housekeeping', 'schedule', 'waste', 'family', 'notes', 'weather', 'clock', 'metrics', 'quicklinks'];
+export const WIDGET_IDS = ['tasks', 'calendar', 'meals', 'shopping', 'pantry', 'birthdays', 'countdown', 'family', 'notes', 'clock', 'metrics', 'quicklinks'];
 
 // Vier kuratierte Formen statt sechs: über vier Auswahlmöglichkeiten pro Widget
 // (× bis zu 12 Widgets) kippt der Anpassen-Modus in Mikro-Entscheidungs-Overhead
@@ -176,7 +176,7 @@ export const COCKPIT_COVERED_WIDGETS = new Set(['tasks', 'calendar', 'shopping',
 // gespeichert haben (keine Migration); nur wer der Vorgabe folgt oder ein
 // Layout ohne `budget` mitbringt, startet ohne. Die Kennzahlreihe fuehrt den
 // Saldo aus demselben Grund nicht mehr (METRIC_TILE_ORDER, pages/dashboard.js).
-export const DEFAULT_HIDDEN_WIDGETS = new Set([...COCKPIT_COVERED_WIDGETS, 'budget', 'rewards', 'health', 'cycle', 'fasting', 'nutrition', 'housekeeping', 'schedule', 'waste', 'pantry', 'clock', 'weather', 'quicklinks']);
+export const DEFAULT_HIDDEN_WIDGETS = new Set([...COCKPIT_COVERED_WIDGETS, 'pantry', 'clock', 'quicklinks']);
 
 export function defaultWidgetVisible(id) {
   return !DEFAULT_HIDDEN_WIDGETS.has(id);
@@ -196,13 +196,7 @@ export const DEFAULT_WIDGET_CONFIG = WIDGET_IDS.map((id, i) => ({ id, visible: d
  * Rein und ohne Seiteneffekt, auf einer schon normalisierten Liste.
  */
 export function childDefaultWidgetConfig(config) {
-  const list = (Array.isArray(config) ? config : []).map((w) => ({ ...w }));
-  const rewards = list.find((w) => w.id === 'rewards');
-  const rest = list
-    .filter((w) => w.id !== 'rewards')
-    .map((w) => (w.id === 'budget' ? { ...w, visible: false } : w));
-  const ordered = rewards ? [{ ...rewards, visible: true }, ...rest] : rest;
-  return ordered.map((w, i) => ({ ...w, order: i }));
+  return normalizeDashboardConfig(config);
 }
 
 /**

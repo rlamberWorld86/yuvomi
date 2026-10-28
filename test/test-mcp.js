@@ -488,8 +488,7 @@ test('get_api_operation: unbekannter operation_key → isError', async () => {
 test('x-mcp-exclude: Modul-Installation und -Loeschen sind ueber MCP weder gelistet noch aufrufbar', async () => {
   const listed = parseContent(await toolCall('list_api_operations', { tag: 'Modules' }));
   const keys = listed.operations.map((op) => op.operation_key);
-  assert.ok(keys.includes('get_modules'), 'die Modulliste bleibt erreichbar');
-  assert.ok(keys.includes('patch_modules_by_id'), 'das Ein-/Ausschalten bleibt erreichbar');
+  assert.equal(keys.length, 0, 'entfernte Erweiterungsverwaltung wird nicht angeboten');
   for (const key of ['post_modules_install_zip', 'post_modules_install_github', 'delete_modules_by_id']) {
     assert.ok(!keys.includes(key), `${key} darf nicht gelistet sein`);
   }
@@ -503,7 +502,9 @@ test('x-mcp-exclude: Modul-Installation und -Loeschen sind ueber MCP weder gelis
     ]) {
       const res = await toolCallWithHeaders('call_api_operation', args, { cookie: 'sid=abc' });
       assert.equal(res.result.isError, true, JSON.stringify(args));
-      assert.match(res.result.content[0].text, /not available through MCP/);
+      assert.match(res.result.content[0].text, args.operation_key
+        ? /^Unknown operation_key:/
+        : /^OpenAPI operation not found for DELETE/);
     }
     assert.equal(calls.length, 0, 'kein Loopback-Aufruf');
   } finally {
@@ -512,13 +513,8 @@ test('x-mcp-exclude: Modul-Installation und -Loeschen sind ueber MCP weder gelis
   const described = await toolCall('get_api_operation', { operation_key: 'delete_modules_by_id' });
   assert.equal(described.result.isError, true);
 
-  // Das Ein-/Ausschalten bleibt gelistet, weil Ausschalten per Token nuetzlich
-  // ist; dass Einschalten eine Sitzung braucht (Runde 3 von #1671), steht in
-  // der Beschreibung, die der Assistent liest - sonst plant er den Schritt.
-  const patch = parseContent(await toolCall('get_api_operation', { operation_key: 'patch_modules_by_id' }));
-  assert.match(patch.description, /browser session/);
-  assert.match(patch.description, /module_session_required/);
-  assert.match(patch.description, /Disabling .* token/);
+  const patch = await toolCall('get_api_operation', { operation_key: 'patch_modules_by_id' });
+  assert.equal(patch.result.isError, true);
 });
 
 // ── OpenAPI-Brücke: call_api_operation (Loopback via gemocktem fetch) ─────────

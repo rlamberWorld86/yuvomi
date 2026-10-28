@@ -5,9 +5,7 @@
  */
 
 import { api, auth, isAbortError } from '/api.js';
-import { canAccessNavModule, navModuleAccess, setExtensionNavMap } from '/permissions.js';
-import { setExtensionModules, selectThirdPartyModuleList } from '/utils/extension-widgets.js';
-import { initExtensionI18n, moduleDisplayLabel, reloadExtensionLocales } from '/utils/extension-i18n.js';
+import { canAccessNavModule, navModuleAccess } from '/permissions.js';
 import { clearApiCache, onServiceWorkerUpdate, UPDATE_RELOAD_DELAY_MS } from '/sw-register.js';
 import { forgetLayoutHint } from '/utils/dashboard-layout-hint.js';
 import { initI18n, getLocale, t, formatTime } from '/i18n.js';
@@ -28,7 +26,7 @@ import { dismissFilterPopovers } from '/utils/filter-sheet.js';
 import { watchToastPlacement } from '/utils/toast-placement.js';
 import { COMPOSITION_MODES } from '/utils/page-layout.js';
 import { init as initReminders, stop as stopReminders } from '/reminders.js';
-import { initPush, stopPush, reportWallPauseState } from '/push.js';
+import { initPush, stopPush } from '/push.js';
 import { numberLocaleFor } from '/settings/region-presets.js';
 import { setDisplayTimeZone, zonedDateKey } from '/utils/timezone.js';
 import { rememberZonePrefs, forgetZonePrefs, noteZoneDecision } from '/utils/household-zone-hint.js';
@@ -36,9 +34,6 @@ import { isKitchenRoute, getLastKitchenRoute } from '/utils/kitchen-tabs.js';
 import { swapPage, swapTheme } from '/utils/view-transition.js';
 import { moduleAccentToken, moduleAccentVar } from '/utils/module-accent.js';
 import { brandMarkSvg } from '/utils/brand-mark.js';
-import { getLastHealthRoute, HEALTH_ROUTES } from '/utils/health-tabs.js';
-import { SCHEDULE_ROUTES } from '/utils/schedule-tabs.js';
-import { activityType } from '/utils/health-activity.js';
 import {
   SEARCH_SECTIONS, NEW_ACTIONS, searchResultCount, markSegments, paletteCommands, paletteStatusText,
   readRecent, rememberRecent, visibleRecent, forgetAllRecent, RECENT_MAX,
@@ -62,7 +57,6 @@ import {
 } from '/utils/nav-badges.js';
 import { isNewerVersion, displayVersion, releasesNewForMe, pendingUpdateFor, changelogReleasesToShow } from '/utils/version.js';
 import { setMaxUploadBytes } from '/utils/upload-limit.js';
-import { syncWallMode, onWallActiveChange, isWallActive } from '/utils/wall-mode.js';
 import {
   rememberScrollPosition,
   scrollPositionFor,
@@ -75,14 +69,13 @@ import {
   noteRestoringScroll,
 } from '/utils/scroll-restore.js';
 import { openModal, confirmModal, closeModal } from '/components/modal.js';
-import { armScreensaver, disarmScreensaver } from '/components/photo-screensaver.js';
 import { installPopoverMenus } from '/utils/popover-menu.js';
 import { prefersInkText } from '/utils/contrast.js';
 import { handleMasterDetailPopstate } from '/utils/master-detail.js';
 import '/components/datepicker.js';
 import { NAV_ICONS, MODULE_ICON, moduleIconEl } from '/nav-icons.js';
 import {
-  RENAMED_SETTINGS_SOURCE_PATHS, SETTINGS_LEAVES, extensionSettingsPaths, findSettingsLeaf, setExtensionSettingsModules, settingsLeafLabel, searchSettings, settingsOptionUrl, settingsSectionUrl,
+  RENAMED_SETTINGS_SOURCE_PATHS, SETTINGS_LEAVES, findSettingsLeaf, settingsLeafLabel, searchSettings, settingsOptionUrl, settingsSectionUrl,
 } from '/settings/registry.js';
 import {
   NAV_SECTION,
@@ -133,13 +126,8 @@ const ROUTES = [
   { path: '/notes',    page: '/pages/notes.js',     requiresAuth: true, module: 'notes',     titleKey: 'nav.notes' },
   { path: '/recipes',  page: '/pages/recipes.js',   requiresAuth: true, module: 'recipes',   titleKey: 'nav.recipes' },
   { path: '/pantry',   page: '/pages/pantry.js',    requiresAuth: true, module: 'pantry',    titleKey: 'nav.pantry' },
-  { path: '/inventory', page: '/pages/inventory.js', requiresAuth: true, module: 'inventory', titleKey: 'nav.inventory' },
   { path: '/contacts', page: '/pages/contacts.js',  requiresAuth: true, module: 'contacts',  titleKey: 'nav.contacts' },
-  { path: '/budget',   page: '/pages/budget.js',    requiresAuth: true, module: 'budget',    titleKey: 'nav.budget' },
   { path: '/documents', page: '/pages/documents.js', requiresAuth: true, module: 'documents', titleKey: 'nav.documents' },
-  { path: '/housekeeping', page: '/pages/housekeeping.js', requiresAuth: true, module: 'housekeeping', titleKey: 'nav.housekeeping' },
-  { path: '/waste', page: '/pages/waste.js', requiresAuth: true, module: 'waste', titleKey: 'nav.waste' },
-  { path: '/rewards',  page: '/pages/rewards.js',    requiresAuth: true, module: 'rewards',   titleKey: 'nav.rewards' },
 ];
 
 // Settings ist eine Sektion mit einer Wurzel und je einer exakten Route pro
@@ -161,24 +149,20 @@ ROUTES.push(...SETTINGS_ROUTES);
 // Gesundheit ist — wie Settings — eine Sektion mit einer Wurzel (/health) und je
 // einer exakten Route pro Sub-Tab. Alle Routen laden dasselbe Seitenmodul; die
 // Soft-Navigation zwischen den Tabs läuft über dessen update()-Funktion.
-const HEALTH_PAGE_ROUTES = HEALTH_ROUTES.map((path) => ({
-  path, page: '/pages/health.js', requiresAuth: true, module: 'health', titleKey: 'nav.health',
-}));
+
 
 // Route-audit literal: { path: '/health/fasting' } is a member of the shared
 // HEALTH_ROUTES registry; the comment lets a static push-target guard verify
 // the deep link without evaluating imported arrays.
-ROUTES.push(...HEALTH_PAGE_ROUTES);
+
 
 // Schedule ist - wie Gesundheit - eine Sektion mit einer Wurzel (/schedule) und
 // je einer exakten Route pro Sub-Tab (S-10). Alle Routen laden dasselbe
 // Seitenmodul; die Soft-Navigation zwischen den Tabs laeuft ueber dessen
 // update()-Funktion.
-const SCHEDULE_PAGE_ROUTES = SCHEDULE_ROUTES.map((path) => ({
-  path, page: '/pages/schedule.js', requiresAuth: true, module: 'schedule', titleKey: 'nav.schedule',
-}));
 
-ROUTES.push(...SCHEDULE_PAGE_ROUTES);
+
+
 
 // --------------------------------------------------------
 // Standalone-Modus: Dynamische theme-color Anpassung
@@ -649,7 +633,6 @@ let _pageController = null;
 // Benachrichtigung, ein Dashboard-Widget oder die Suche. Wer entziehen will,
 // nimmt die Rechte (#467); wer aufraeumen will, blendet aus.
 let _hiddenModules = new Set();
-let _thirdPartyModules = [];
 let _moduleOrder = [];
 let _mobileNavOrder = [];
 let _moduleRefreshTimer = null;
@@ -666,7 +649,7 @@ const MOBILE_FAVORITE_COUNT = 3;
 // Modul-Blaettern, und die erste, die eine neue Regel (kein Kopf ueber nur
 // einem Eintrag, R19) nicht mitbekommen haette.
 
-const DEFAULT_APP_NAME = 'Yuvomi';
+const DEFAULT_APP_NAME = 'Lamber Cockpit';
 const APP_NAME_STORAGE_KEY = 'yuvomi-app-name';
 const APP_VERSION_STORAGE_KEY = 'yuvomi-app-version';
 
@@ -677,12 +660,10 @@ function topLevelSection(path) {
   if (typeof path === 'string' && path.startsWith('/settings')) return '/settings';
   // /health/* Sub-Tabs teilen sich eine Sektion (Soft-Nav zwischen Tabs, ein
   // aktives Nav-Ziel) - analog zu den Settings-Blättern.
-  if (typeof path === 'string' && path.startsWith('/health')) return '/health';
   // /schedule/* Sub-Tabs ebenso (S-10) — derselbe Grund wie bei /health.
   // Exaktes '/schedule' ODER '/schedule/...' (Review zu #1099): ein blosses
   // startsWith('/schedule') traefe auch einen hypothetischen kuenftigen Pfad
   // wie '/schedules...', der zu keinem echten Schedule-Tab gehoert.
-  if (typeof path === 'string' && (path === '/schedule' || path.startsWith('/schedule/'))) return '/schedule';
   return path ?? '/';
 }
 
@@ -733,8 +714,6 @@ function routeTitle(path) {
 
   // Dritt-Module bringen ihren Titel im eigenen Manifest mit; sie stehen nicht
   // in ROUTES, sondern kommen zur Laufzeit dazu.
-  const thirdParty = _thirdPartyModules.find((module) => module.route?.path === path);
-  if (thirdParty) return moduleDisplayLabel(thirdParty);
 
   // Unbekannter Pfad oder eine der beiden erklärt titellosen Routen
   // (/login, /setup): der App-Name ist dort der Titel.
@@ -840,8 +819,8 @@ const navigate = createNavigate(routerState, {
   ROUTES, allRoutes, unknownPathDetour, publicPathDetour, detourPaths, canAccessNavModule,
   location, history, window, document,
   hasLeaveGuard, mayLeave, whenHistorySettled, consumeOverlayMarker,
-  auth: startHandoff.auth, syncPreferencesOnce, startThirdPartyModulePolling, loadReminderStyles, initReminders, initPush: initPushAndReport,
-  armScreensaver, forgetSessionState,
+  auth: startHandoff.auth, syncPreferencesOnce, loadReminderStyles, initReminders, initPush,
+  forgetSessionState,
   // Nur ein 401 fuehrt zur Anmeldung; jeder andere Fehler der Sitzungspruefung
   // zeichnet diesen Zustand in #app und versucht selbst erneut (Critique R19).
   showSessionUnreachable: (err, retry) => showSessionUnreachable(document.getElementById('app'), err, retry),
@@ -852,32 +831,12 @@ const navigate = createNavigate(routerState, {
   renderPage, adoptPageFab,
   updateNav: updateNavForEntry,
   topLevelSection,
-  syncWallMode, applyModuleAccentForRoute, updateThemeColorForRoute, updateBranding,
+  applyModuleAccentForRoute, updateThemeColorForRoute, updateBranding,
   focusMainContentAfterNavigation, showToast, t,
 });
 
 // Wenn der Wandmodus beginnt oder endet, haelt der Server das Abo dieses
 // Geraets an oder gibt es frei - persoenliche Pushes ueber der Wand (#1904).
-onWallActiveChange(reportWallPauseState);
-
-// Boot-Zeit und Lebensdauer-Erneuerung (#1904):
-// Der Uebergangs-Hook oben greift nicht, wenn theme-init.js `data-wall-mode`
-// schon gesetzt hat, bevor hier eine Navigation stattfand (Kaltstart auf `/`).
-// Und ein Geraet, das mit aktiver Wand gekilled wurde, bleibt bei Rueckkehr
-// pausiert, bis syncWallMode einen Wechsel sieht.
-// Drei Stellen schliessen die Luecke:
-// - initPushAndReport: einmal pro Sitzung direkt nach initPush()
-// - visibilitychange: bei jedem Aufwachen, z. B. nach Telefon-Sperrbildschirm
-// - stundliches Interval: eine lang laufende Wand erneuert die Pause automatisch
-async function initPushAndReport() {
-  await initPush();
-  reportWallPauseState(isWallActive());
-}
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) reportWallPauseState(isWallActive());
-});
-setInterval(() => { if (isWallActive()) reportWallPauseState(true); }, 60 * 60 * 1000);
-
 /**
  * Laedt, was jede Sitzung vor ihrer ersten Seite braucht: Praeferenzen,
  * Versionsangaben, Erweiterungsmodule.
@@ -924,7 +883,7 @@ async function syncPreferencesOnce() {
     // Non-critical. The login page and settings page can refresh branding later.
     .catch(() => {});
 
-  await Promise.all([preferencesApplied, versionApplied, syncThirdPartyModules()]);
+  await Promise.all([preferencesApplied, versionApplied]);
 }
 
 function applyStartPreferences(res) {
@@ -977,63 +936,11 @@ function applyStartPreferences(res) {
   }
 }
 
-async function syncThirdPartyModules({ forceLocales = false } = {}) {
-  try {
-    const res = await api.get('/modules');
-    _thirdPartyModules = selectThirdPartyModuleList(_thirdPartyModules, { ok: true, data: res?.data });
-  } catch {
-    _thirdPartyModules = selectThirdPartyModuleList(_thirdPartyModules, { ok: false });
-  }
-  setExtensionModules(_thirdPartyModules);
-  setExtensionSettingsModules(_thirdPartyModules);
-  setExtensionNavMap(_thirdPartyModules);
-  await reloadExtensionLocales(_thirdPartyModules, { force: forceLocales });
-}
 
-function moduleSnapshot() {
-  return JSON.stringify(_thirdPartyModules.map((module) => ({
-    id: module.id,
-    enabled: module.enabled,
-    status: module.status,
-    path: module.route?.path,
-    label: module.menu?.label,
-  })));
-}
 
-function startThirdPartyModulePolling() {
-  if (_moduleRefreshTimer || ['split_guest', 'display'].includes(routerState.currentUser?.access_scope)) return;
-  _moduleRefreshTimer = setInterval(async () => {
-    // Ein verborgener Tab fragt nicht ab: niemand sieht die Navigation, und
-    // der naechste Takt nach der Rueckkehr holt den Stand nach.
-    if (document.hidden) return;
-    const before = moduleSnapshot();
-    await syncThirdPartyModules();
-    if (before !== moduleSnapshot()) rebuildNavigation();
-  }, 30_000);
-}
 
-function stopThirdPartyModulePolling() {
-  if (!_moduleRefreshTimer) return;
-  clearInterval(_moduleRefreshTimer);
-  _moduleRefreshTimer = null;
-}
 
-function allRoutes() {
-  const moduleRoutes = _thirdPartyModules
-    .filter((module) => module.enabled && module.status === 'enabled' && module.route?.path && module.route?.entry)
-    .map((module) => ({
-      path: module.route.path,
-      page: module.route.entry,
-      style: module.route.style,
-      requiresAuth: true,
-      module: `third-party-${module.id}`,
-      thirdPartyModule: module,
-    }));
-  const settingsRoutes = extensionSettingsPaths().map((path) => ({
-    path, page: '/pages/settings.js', requiresAuth: true, module: 'settings', titleKey: 'nav.settings',
-  }));
-  return [...ROUTES, ...settingsRoutes, ...moduleRoutes];
-}
+function allRoutes() { return ROUTES; }
 
 /**
  * Die Route der gerade dargestellten Seite. Nötig für alles, was Chrome-Farben
@@ -1930,12 +1837,8 @@ async function renderPage(route, previousPath = null, scrollTarget = 0, { signal
       // `page.width`; docs/PAGE-COMPOSITION.md). Angewandt wird die Erklaerung
       // HIER, sonst waere sie ein Feld ohne Wirkung: der Server prueft sie, die
       // Admin-Liste zeigt sie, und die Seite saehe trotzdem aus wie ohne.
-      const target = route.thirdPartyModule
-        ? mountExtensionPage(pageWrapper, route.thirdPartyModule)
-        : pageWrapper;
-      const context = route.thirdPartyModule
-        ? { user: routerState.currentUser, page: { ...route.thirdPartyModule.page }, signal: _pageController.signal }
-        : { user: routerState.currentUser, signal: _pageController.signal };
+      const target = pageWrapper;
+      const context = { user: routerState.currentUser, signal: _pageController.signal };
       // Ein Rueckweg mit gemerktem Stand: lange Listen zeichnen dann ganz
       // statt in Happen (utils/row-fill.js) - die Zeilen ueber dem Ziel
       // brauchen ihre echte Hoehe. Der synchrone Teil von render() liest es,
@@ -2050,9 +1953,6 @@ async function renderPage(route, previousPath = null, scrollTarget = 0, { signal
   } catch (err) {
     document.documentElement.classList.remove('navigating');
     console.error('[Router] Seiten-Render-Fehler:', err);
-    if (route.thirdPartyModule?.id) {
-      await disableFailedThirdPartyModule(route.thirdPartyModule.id);
-    }
     // Fehler NUR in den Inhaltsbereich rendern. #app enthält auch die App-Shell
     // (Sidebar, Bottom-Nav, Suche); ein replaceChildren() darauf löscht die
     // gesamte Navigation und die Fehlerkarte dehnt sich über die Nav-Spalte -
@@ -2063,7 +1963,7 @@ async function renderPage(route, previousPath = null, scrollTarget = 0, { signal
     // offline zeigte "Etwas ist schiefgelaufen" samt Stack. Ein Netzfehler
     // bekommt den Zustand der Sitzungsseite und zeichnet sich bei `online`
     // selbst neu; nur ein Fehler im Code der Seite bleibt der Fehlerbildschirm.
-    if (!route.thirdPartyModule && isUnreachableFailure(err)) {
+    if (isUnreachableFailure(err)) {
       const retryPath = `${location.pathname}${location.search}${location.hash}`;
       showPageUnreachable(errorHost, err, () => navigate(retryPath, false));
     } else {
@@ -2876,7 +2776,6 @@ const SHORTCUTS = [
   // beide Wege (Label an `g k s`).
   { key: 'g s', hidden: true, description: () => t('shortcuts.goShop'),  action: () => navigate('/shopping') },
   { key: 'g n', description: () => t('shortcuts.goNotes'),   action: () => navigate('/notes')              },
-  { key: 'g h', description: () => t('shortcuts.goHealth'),  action: () => navigate(getLastHealthRoute())  },
   // Die 3er-Chords nennen ihr konkretes Ziel (Essensplan/Rezepte/Einkauf):
   // vier identische "Küche"-Zeilen im Hilfe-Modal waren nicht unterscheidbar
   // (Audit A1-13).
@@ -2885,14 +2784,12 @@ const SHORTCUTS = [
   { key: 'g k r', description: () => t('nav.recipes'),         action: () => navigate('/recipes')           },
   { key: 'g k s', label: () => 'g s / g k s', description: () => t('nav.shopping'), action: () => navigate('/shopping') },
   { key: 'g k v', description: () => t('nav.pantry'),          action: () => navigate('/pantry')            },
-  { key: 'g i', description: () => t('shortcuts.goInventory'), action: () => navigate('/inventory') },
   // Beschriftung wie bei den Kuechen-3er-Chords direkt aus den Nav-Labels -
   // kein zweiter Uebersetzungssatz. Nur die zwei Ziele mit eindeutiger
   // deutscher Merkhilfe (Budget, Einstellungen); die uebrigen Kandidaten
   // (Kontakte, Dokumente, Schichtplan, Haushaltshilfe, Belohnungen,
   // Geburtstage) warten auf eine Buchstaben-Entscheidung des Betreibers,
   // bevor sich ein unmerkbares Schema festsetzt (Critique 2026-08-31, Alex).
-  { key: 'g b', description: () => t('nav.budget'),   action: () => navigate('/budget') },
   { key: 'g e', description: () => t('nav.settings'), action: () => navigate('/settings') },
   // KALENDER (Critique 2026-09-24, P1, Persona Alex): die Handgriffe von Google
   // Kalender. Nur auf /calendar (`route`) - anderswo sind die Buchstaben frei
@@ -4067,10 +3964,7 @@ function renderSearchResults(container, data, onClose, { local = { places: [], a
   }
 
   // Aktivitätstyp lokalisieren (Preset via labelKey, Freitext unverändert).
-  const activityLabel = (item) => {
-    const preset = activityType(item.title);
-    return preset ? t(preset.labelKey) : item.title;
-  };
+  const activityLabel = (item) => item.title;
 
   // Die Suche ist DIE Mischstelle der App (Herkunfts-Regel, Block 2): jede
   // Sektion traegt das Markensiegel ihres Herkunftsmoduls im Kopf; innerhalb
@@ -4211,16 +4105,6 @@ function renderSearchResults(container, data, onClose, { local = { places: [], a
  * Der Modus ist serverseitig normalisiert (services/modules.js); der Rueckfall
  * hier faengt nur einen manipulierten oder veralteten Listeneintrag ab.
  */
-function mountExtensionPage(wrapper, thirdPartyModule) {
-  const page = thirdPartyModule?.page || {};
-  const mode = COMPOSITION_MODES.includes(page.composition) ? page.composition : 'reading';
-  const root = document.createElement('div');
-  root.className = `app-page app-page--${mode} extension-page`;
-  root.dataset.composition = mode;
-  if (page.width) root.dataset.pageWidth = String(page.width);
-  wrapper.appendChild(root);
-  return root;
-}
 
 /**
  * Die Module, in denen ein Wandtablett trotz `read` etwas TUN kann (#1209):
@@ -4304,40 +4188,20 @@ function navItems({ catalog = false } = {}) {
     // Plan
     { path: '/calendar',  label: t('nav.calendar'),  module: 'calendar',  section: NAV_SECTION.plan },
     { path: '/tasks',     label: t('nav.tasks'),     module: 'tasks',     section: NAV_SECTION.plan },
-    { path: '/rewards',   label: t('nav.rewards'),   module: 'rewards',   section: NAV_SECTION.plan },
     { path: '/notes',     label: t('nav.notes'),     module: 'notes',     section: NAV_SECTION.plan },
-    { path: '/schedule',  label: t('nav.schedule'),  module: 'schedule',  section: NAV_SECTION.plan },
     // Haushalt — Kitchen-Gruppe zuerst, dann die übrigen Haushalts-Module
     { path: '/meals',     label: t('nav.meals'),     module: 'meals',    section: NAV_SECTION.household, kitchenGroup: true },
     { path: '/recipes',   label: t('nav.recipes'),   module: 'recipes',  section: NAV_SECTION.household, kitchenGroup: true },
     { path: '/shopping',  label: t('nav.shopping'),  module: 'shopping', section: NAV_SECTION.household, kitchenGroup: true },
     { path: '/pantry',    label: t('nav.pantry'),    module: 'pantry',   section: NAV_SECTION.household, kitchenGroup: true },
-    { path: '/housekeeping', label: t('nav.housekeeping'), module: 'housekeeping', section: NAV_SECTION.household },
-    { path: '/waste',     label: t('nav.waste'),     module: 'waste',    section: NAV_SECTION.household },
     { path: '/documents', label: t('nav.documents'), module: 'documents',   section: NAV_SECTION.household },
-    { path: '/inventory', label: t('nav.inventory'), module: 'inventory',   section: NAV_SECTION.household },
     // Menschen
     { path: '/contacts',  label: t('nav.contacts'),  module: 'contacts',    section: NAV_SECTION.people },
     { path: '/birthdays', label: t('nav.birthdays'), module: 'birthdays',   section: NAV_SECTION.people },
-    { path: '/health',    label: t('nav.health'),    module: 'health',      section: NAV_SECTION.people },
     // Finanzen - ein einziger Eintrag, deshalb ohne Kopf (navSectionLabelKey)
-    { path: '/budget',    label: t('nav.budget'),    module: 'budget',      section: NAV_SECTION.finance },
     // Settings ist am Ende gepinnt (siehe unten).
     { path: '/settings',  navHref: '/settings?view=domains', label: t('nav.settings'),  module: 'settings',    section: NAV_SECTION.household },
   ].map(withIcon);
-  const thirdPartyItems = _thirdPartyModules
-    .filter((module) => module.enabled && module.status === 'enabled' && module.menu?.show && module.route?.path)
-    .map((module) => ({
-      path: module.route.path,
-      label: moduleDisplayLabel(module),
-      icon: module.menu.icon || module.icon || 'box',
-      module: `third-party-${module.id}`,
-      accent: module.accent,
-      order: module.menu.order ?? 1000,
-      orderId: `third-party-${module.id}`,
-      section: NAV_SECTION.customModules,
-    }))
-    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
   const settings = baseItems.find((item) => item.module === 'settings');
   /* DER KATALOG IST NICHT DIE NAVIGATION.
    *
@@ -4350,7 +4214,7 @@ function navItems({ catalog = false } = {}) {
    * fuer den die Trennung gebaut ist. Wer ihn per Deep-Link oeffnete, bekam
    * "/calendar" angesagt statt "Kalender" und einen Kopf ohne Siegel
    * (Codex-Review zu PR #790). */
-  const all = [...baseItems, ...thirdPartyItems];
+  const all = baseItems;
   if (catalog) return all;
   const sortable = [
     ...baseItems.filter((item) =>
@@ -4358,7 +4222,6 @@ function navItems({ catalog = false } = {}) {
       && !routerState._disabledModules.has(item.module)
       && !_hiddenModules.has(item.module)
       && canAccessNavModule(item.module)),
-    ...thirdPartyItems,
   ];
   const ordered = sortNavigationItems(sortable, _moduleOrder);
   return settings ? [...ordered, settings] : ordered;
@@ -4561,31 +4424,7 @@ function setMobileNavOrder(order) {
   rebuildNavigation();
 }
 
-async function refreshThirdPartyModules() {
-  // Nach Installation oder Update: Sprachdateien koennen sich bei gleicher
-  // Version geaendert haben, deshalb ohne Fingerabdruck-Vergleich neu laden.
-  await syncThirdPartyModules({ forceLocales: true });
-  rebuildNavigation();
-}
 
-async function disableFailedThirdPartyModule(moduleId) {
-  if (!moduleId) return;
-  try {
-    await api.patch(`/modules/${encodeURIComponent(moduleId)}`, { enabled: false });
-    // Only remove locally if admin successfully disabled it
-    _thirdPartyModules = _thirdPartyModules.filter((module) => module.id !== moduleId);
-    setExtensionSettingsModules(_thirdPartyModules);
-    rebuildNavigation();
-  } catch (err) {
-    // Non-admins cannot disable modules; keep module visible
-    // For actual failures (not 403), still remove from local state to avoid broken UI
-    if (err?.status !== 403) {
-      _thirdPartyModules = _thirdPartyModules.filter((module) => module.id !== moduleId);
-      setExtensionSettingsModules(_thirdPartyModules);
-      rebuildNavigation();
-    }
-  }
-}
 
 /* Der Auflöser Modul → Ton steht in `/utils/module-accent.js`. Er war bis
  * 2026-08-18 hier privat, und deshalb hatte die Modul-Liste der Einstellungen
@@ -5310,7 +5149,6 @@ function forgetSessionState() {
   // das Abraeumen der Shell - ein bloss geleertes Register liesse es ueber der
   // Anmeldeseite stehen.
   closeAllOverlays();
-  stopThirdPartyModulePolling();
   stopReminders();
   stopPush();
   // Die zuletzt geoeffneten Orte der Palette (R19): Ziele eines Kontos
@@ -5320,7 +5158,6 @@ function forgetSessionState() {
   // an - sein 401 zeichnete sonst die Anmeldeseite ueber ein halb
   // ausgefuelltes Formular. Scharf macht ihn navigate(), sobald es wieder
   // jemanden gibt.
-  disarmScreensaver();
 }
 
 // Session abgelaufen: der Listener steht in utils/router-navigate.js
@@ -5372,8 +5209,11 @@ function rebuildNavigation({ updateLabels = true } = {}) {
     // Springen zwischen erstem und letztem Eintrag.
     const previousScrollTop = navSidebarItems.scrollTop;
     const sidebarEls = sidebarNavItems();
-    navSidebarItems.replaceChildren(...sidebarEls);
-    if (window.lucide) window.lucide.createIcons({ el: navSidebarItems });
+    const pinned = sidebarEls.filter((item) => item.classList?.contains('nav-item--pinned-end'));
+    navSidebarItems.replaceChildren(...sidebarEls.filter((item) => !pinned.includes(item)));
+    navSidebar?.querySelectorAll(':scope > .nav-item--pinned-end').forEach((item) => item.remove());
+    pinned.forEach((item) => navSidebar?.appendChild(item));
+    if (window.lucide) window.lucide.createIcons({ el: navSidebar });
     requestAnimationFrame(() => {
       navSidebarItems.scrollTop = Math.min(
         previousScrollTop,
@@ -5644,7 +5484,6 @@ if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
     prefetchRoute(location.pathname, { now: true });
 
     await initI18n();
-    initExtensionI18n();
     try {
       const v = await version;
       routerState._setupRequired = v?.setup_required === true;
@@ -5681,7 +5520,6 @@ window.yuvomi = {
   // (settings/registry.js, settingsSheetsForDomain) - eine Reihenfolge, zwei Orte.
   moduleOrder: () => _moduleOrder.slice(),
   setMobileNavOrder,
-  refreshThirdPartyModules,
   isModuleDisabled,
   // Ein Modul hat etwas geaendert, das an einem Nav-Ziel gezaehlt wird (#868).
   // Begruendung an `invalidateModuleCounts`.

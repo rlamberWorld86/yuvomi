@@ -171,16 +171,14 @@ export function isUploadBackendSelectionExplicit() {
 }
 
 export function getSelectedUploadBackend() {
-  const selected = storedSelectedUploadBackend();
-  if (selected) return selected;
-  return getConfig().enabled ? 'webdav' : 'local';
+  return 'google_drive';
 }
 
 export function setSelectedUploadBackend(backend) {
-  if (!SELECTABLE_BACKENDS.has(backend)) {
+  if (backend !== 'google_drive') {
     throw new StorageError(
       'DOCUMENT_STORAGE_INVALID_CONFIG',
-      'selected_upload_backend must be local, webdav, or google_drive.'
+      'Google Drive is the only document upload destination.'
     );
   }
   if (backend === 'webdav') {
@@ -211,12 +209,9 @@ export function setSelectedUploadBackend(backend) {
   return backend;
 }
 
-// New uploads resolve in this order: an environment-managed local folder,
-// then the administrator's explicit destination, then the legacy default
-// (enabled WebDAV or the SQLite BLOB). Connecting Drive never selects it.
+// Existing local/WebDAV documents remain readable; new content goes to Drive.
 export function getActiveUploadBackend() {
-  if (getLocalStorageConfig().enabled) return 'local_folder';
-  return getSelectedUploadBackend();
+  return 'google_drive';
 }
 
 // Resolve a validated storage key to an absolute path inside basePath.
@@ -654,13 +649,13 @@ function filenameParts(originalName) {
 }
 
 function toStorageError(error, storageCode, message) {
-  if (error instanceof StorageError) {
+  if (error instanceof StorageError || error instanceof googleDriveStorage.GoogleDriveStorageError) {
     if (
       error.storageCode === 'DOCUMENT_STORAGE_INVALID_CONFIG'
       || error.storageCode === 'DOCUMENT_STORAGE_NOT_CONFIGURED'
       || error.storageCode === 'DOCUMENT_STORAGE_TOO_LARGE'
     ) {
-      return error;
+      return error instanceof StorageError ? error : new StorageError(error.storageCode, error.message, { cause: error });
     }
   }
   return new StorageError(storageCode, message, { cause: error });
@@ -810,101 +805,12 @@ export async function stageDocumentUpload({
 }) {
   const content = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
 
-  // Folder-backed local storage (env opt-in) takes precedence over WebDAV and
-  // the in-DB BLOB default. Writes go to DOCUMENT_STORAGE_LOCAL_PATH/<storage_key>.
-  // A write failure surfaces loudly (e.g. read-only mount, wrong ownership) so
-  // the misconfiguration is fixed rather than silently masked.
-  const localCfg = getLocalStorageConfig();
-  if (localCfg.enabled) {
-    const relKey = normalizeStorageKey(buildStorageKey({ category, originalName }));
-    const destPath = resolveLocalPath(localCfg.basePath, relKey);
-    try {
-      await fs.mkdir(path.dirname(destPath), { recursive: true });
-      await fs.writeFile(destPath, content);
-    } catch (error) {
-      throw toStorageError(
-        error,
-        'DOCUMENT_STORAGE_UPLOAD_FAILED',
-        'The document could not be written to local storage.'
-      );
-    }
-    return {
-      storage_backend: 'local',
-      storage_provider: 'local',
-      storage_key: relKey,
-      content_data: '',
-    };
-  }
-
-  const activeBackend = getSelectedUploadBackend();
-  if (activeBackend === 'local') {
-    return {
-      storage_backend: 'local',
-      storage_provider: 'local',
-      storage_key: null,
-      // Raw buffer stored in SQLite BLOB (legacy/default behaviour)
-      content_data: content,
-    };
-  }
-
-  if (activeBackend === 'google_drive') {
-    try {
-      const fileId = await googleDriveStorage.uploadFile({
-        buffer: content,
-        mime,
-        originalName,
-      });
-      return {
-        storage_backend: 'google_drive',
-        storage_provider: 'external',
-        storage_key: fileId,
-        content_data: '',
-      };
-    } catch (error) {
-      throw toStorageError(
-        error,
-        'DOCUMENT_STORAGE_UPLOAD_FAILED',
-        'The document could not be uploaded to Google Drive.'
-      );
-    }
-  }
-
-  const config = getConfig();
-  if (!config.enabled) {
-    throw new StorageError(
-      'DOCUMENT_STORAGE_NOT_CONFIGURED',
-      'WebDAV is selected but is not enabled.'
-    );
-  }
-  requireWebdavConfig(config);
-  const storageKey = buildStorageKey({ category, originalName });
-  const keySegments = normalizeStorageKey(storageKey).split('/');
   try {
-    await ensureCollections(config, keySegments.slice(0, -1));
-    const response = await davFetch(config, 'PUT', [
-      ...config.basePath.split('/'),
-      ...keySegments,
-    ], {
-      body: content,
-      headers: { 'Content-Type': mime },
-    });
-    if (!response.ok) {
-      throw new Error(`PUT failed with status ${response.status}.`);
-    }
+    const fileId = await googleDriveStorage.uploadFile({ buffer: content, mime, originalName });
+    return { storage_backend: 'google_drive', storage_provider: 'external', storage_key: fileId, content_data: '' };
   } catch (error) {
-    throw toStorageError(
-      error,
-      'DOCUMENT_STORAGE_UPLOAD_FAILED',
-      'The document could not be uploaded to WebDAV.'
-    );
+    throw toStorageError(error, 'DOCUMENT_STORAGE_UPLOAD_FAILED', 'The document could not be uploaded to Google Drive.');
   }
-
-  return {
-    storage_backend: 'webdav',
-    storage_provider: 'external',
-    storage_key: storageKey,
-    content_data: '',
-  };
 }
 
 export async function verifyExistingWebdavDocument(document, config) {
@@ -1064,19 +970,7 @@ export async function readDocumentContent(document, { dmsResolver } = {}) {
 
 export async function deleteDocumentContent(document) {
   if (document.storage_backend === 'google_drive') {
-    if (googleDriveStorage.preservesRemoteFiles()) {
-      googleDriveStorage.suppressSyncDocument(document);
-      return;
-    }
-    try {
-      await googleDriveStorage.deleteFile(document.storage_key);
-    } catch (error) {
-      throw toStorageError(
-        error,
-        'DOCUMENT_STORAGE_DELETE_FAILED',
-        'The Google Drive document could not be deleted.'
-      );
-    }
+    googleDriveStorage.suppressSyncDocument(document);
     return;
   }
 
@@ -1125,7 +1019,8 @@ export async function deleteDocumentContent(document) {
 
 export async function cleanupStagedUpload(staged) {
   try {
-    if (staged.storage_backend === 'google_drive') return await googleDriveStorage.deleteFile(staged.storage_key);
+    // Leave an uploaded Drive file intact after a local insert failure. The next scan can recover it.
+    if (staged.storage_backend === 'google_drive') return;
     return await deleteDocumentContent(staged);
   } catch (error) {
     throw new StorageError(

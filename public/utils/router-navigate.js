@@ -43,11 +43,11 @@ export const NAVIGATE_DEPS = Object.freeze([
   // Verlassen-Schutz und Overlay-History
   'hasLeaveGuard', 'mayLeave', 'whenHistorySettled', 'consumeOverlayMarker',
   // Sitzung
-  'auth', 'syncPreferencesOnce', 'startThirdPartyModulePolling', 'loadReminderStyles', 'initReminders', 'initPush',
-  'armScreensaver', 'showSessionUnreachable', 'forgetSessionState',
+  'auth', 'syncPreferencesOnce', 'loadReminderStyles', 'initReminders', 'initPush',
+  'showSessionUnreachable', 'forgetSessionState',
   // Seite
   'rememberScrollPosition', 'scrollPositionFor', 'renderPage', 'adoptPageFab', 'updateNav', 'topLevelSection',
-  'syncWallMode', 'applyModuleAccentForRoute', 'updateThemeColorForRoute', 'updateBranding',
+  'applyModuleAccentForRoute', 'updateThemeColorForRoute', 'updateBranding',
   'focusMainContentAfterNavigation', 'showToast', 't',
 ]);
 
@@ -205,10 +205,10 @@ export function createNavigate(state, deps) {
     ROUTES, allRoutes, unknownPathDetour, publicPathDetour, detourPaths, canAccessNavModule,
     location, history, window, document,
     hasLeaveGuard, mayLeave, whenHistorySettled, consumeOverlayMarker,
-    auth, syncPreferencesOnce, startThirdPartyModulePolling, loadReminderStyles, initReminders, initPush,
-    armScreensaver, showSessionUnreachable, forgetSessionState,
+    auth, syncPreferencesOnce, loadReminderStyles, initReminders, initPush,
+    showSessionUnreachable, forgetSessionState,
     rememberScrollPosition, scrollPositionFor, renderPage, adoptPageFab, updateNav, topLevelSection,
-    syncWallMode, applyModuleAccentForRoute, updateThemeColorForRoute, updateBranding,
+    applyModuleAccentForRoute, updateThemeColorForRoute, updateBranding,
     focusMainContentAfterNavigation, showToast, t,
   } = deps;
 
@@ -353,9 +353,9 @@ export function createNavigate(state, deps) {
         // Ab hier gibt es jemanden, dessen Bildschirmschoner es sein kann
         // (#1919). VOR dem await: laeuft die Sitzung dabei ab, entschaerft
         // `auth:expired` ihn wieder. Fuer jedes Konto, auch Gast und Display.
-        armScreensaver();
+
         await syncPreferencesOnce();
-        startThirdPartyModulePolling();
+
         // currentUser kann während des await oben auf null gesetzt worden sein
         // (auth:expired bei 401 von /preferences), daher Guard gegen null.
         if (state.currentUser && !['split_guest', 'display'].includes(state.currentUser.access_scope)) {
@@ -454,9 +454,9 @@ export function createNavigate(state, deps) {
           // Wie beim Anmelden oben (#1919). Hier wird auch ein gekoppeltes
           // Wanddisplay scharf: es hat keine Nutzersitzung, aber `/auth/me`
           // antwortet ihm mit seinem Konto.
-          armScreensaver();
+
           await syncPreferencesOnce();
-          startThirdPartyModulePolling();
+
           // currentUser kann während des await oben auf null gesetzt worden sein
           // (auth:expired bei 401 von /preferences), daher Guard gegen null.
           if (state.currentUser && !['split_guest', 'display'].includes(state.currentUser.access_scope)) {
@@ -628,7 +628,7 @@ export function createNavigate(state, deps) {
       // als aufgeloeste Farbe im Inline-Style landet: umgekehrt truege die Shell
       // den Hellmodus-Wert in eine dunkle Nacht (dieselbe Reihenfolge-Falle wie
       // bei applyTheme).
-      syncWallMode(basePath);
+
 
       // Küchen-Routen lösen auf --module-kitchen auf, nicht auf ihr eigenes
       // --module-*: die Küche ist im Routing vier Module, in Navigation, Akzent

@@ -244,7 +244,7 @@ test('Fehlertext: jeder bekannte Grund hat einen eigenen Key, ein unbekannter de
     assert.equal(restoreErrorText({ message: LONG_ENGLISH, data: { reason } }), 'settings.backupRestoreErrorGeneric', reason);
   }
   // Ohne Grund traegt nur der Text die Auskunft (etwa ein neueres Schema).
-  assert.equal(restoreErrorText({ message: 'Update Yuvomi first, then restore.' }), 'Update Yuvomi first, then restore.');
+  assert.equal(restoreErrorText({ message: 'Update Lamber Cockpit first, then restore.' }), 'Update Lamber Cockpit first, then restore.');
   assert.equal(restoreErrorText(undefined), 'common.errorGeneric');
   // Und jeden Key gibt es in jeder Sprache.
   const locales = new URL('../public/locales/', import.meta.url);
@@ -269,25 +269,25 @@ test('Fehlertext: jeder bekannte Grund hat einen eigenen Key, ein unbekannter de
  * jede Sprache ihn mit Inhalt fuellt und der Haupttext den Schlusssatz nicht
  * doppelt traegt. Fuer de und en dazu der Wortlaut.
  */
-test('Fehlertext: own_key_missing und backup_key_wrong nennen auch „keine Yuvomi-Datenbank"', () => {
+test('Fehlertext: own_key_missing und backup_key_wrong nennen auch „keine Lamber Cockpit-Datenbank"', () => {
   const locales = new URL('../public/locales/', import.meta.url);
   const files = readdirSync(locales).filter((name) => name.endsWith('.json'));
   assert.equal(files.length, getSupportedLocales().length, 'Vorbedingung: alle Sprachen gelesen');
   for (const file of files) {
     const s = JSON.parse(readFileSync(new URL(file, locales), 'utf8')).settings;
     for (const key of ['backupRestoreErrorNeverEncrypted', 'backupRestoreErrorKeyRightButNotDb', 'backupRestoreErrorNothingChanged']) {
-      assert.ok(typeof s[key] === 'string' && s[key].includes('Yuvomi') !== (key === 'backupRestoreErrorNothingChanged'), `${file}: ${key}`);
+      assert.ok(typeof s[key] === 'string' && s[key].includes('Lamber Cockpit') !== (key === 'backupRestoreErrorNothingChanged'), `${file}: ${key}`);
     }
     for (const key of ['backupRestoreErrorOwnKeyMissing', 'backupRestoreErrorKeyWrong']) {
       assert.ok(!s[key].includes(s.backupRestoreErrorNothingChanged), `${file}: ${key} traegt den Schlusssatz selbst`);
     }
   }
   const de = JSON.parse(readFileSync(new URL('de.json', locales), 'utf8')).settings;
-  assert.match(de.backupRestoreErrorNeverEncrypted, /nie verschlüsselt.*keine gültige Yuvomi-Datenbank/);
-  assert.match(de.backupRestoreErrorKeyRightButNotDb, /Schlüssel richtig.*keine Yuvomi-Datenbank.*abgeschnitten/);
+  assert.match(de.backupRestoreErrorNeverEncrypted, /nie verschlüsselt.*keine gültige Lamber Cockpit-Datenbank/);
+  assert.match(de.backupRestoreErrorKeyRightButNotDb, /Schlüssel richtig.*keine Lamber Cockpit-Datenbank.*abgeschnitten/);
   const en = JSON.parse(readFileSync(new URL('en.json', locales), 'utf8')).settings;
-  assert.match(en.backupRestoreErrorNeverEncrypted, /never encrypted.*not a valid Yuvomi database/);
-  assert.match(en.backupRestoreErrorKeyRightButNotDb, /key is right.*not a Yuvomi database.*cut short/);
+  assert.match(en.backupRestoreErrorNeverEncrypted, /never encrypted.*not a valid Lamber Cockpit database/);
+  assert.match(en.backupRestoreErrorKeyRightButNotDb, /key is right.*not a Lamber Cockpit database.*cut short/);
 });
 
 test('describedby: die Fehlerbox kommt dazu, Hinweis und HTTP-Warnung bleiben, und sie geht wieder', async () => {

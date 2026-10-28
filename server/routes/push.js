@@ -88,7 +88,7 @@ export function buildRouter({ pushService = defaultPushService, database } = {})
   router.post('/test', async (req, res) => {
     try {
       const userId = req.authUserId || req.session.userId;
-      const title = typeof req.body?.title === 'string' ? req.body.title : 'Yuvomi';
+      const title = typeof req.body?.title === 'string' ? req.body.title : 'Lamber Cockpit';
       const body  = typeof req.body?.body === 'string' ? req.body.body : '';
       const testEndpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint : null;
       // Vor dem Senden zählen: Wird das Abo beim Senden als "gone" entfernt,

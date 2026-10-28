@@ -13,28 +13,6 @@ const APPEARANCE_PATH = '/settings/personal/appearance';
 
 const TOGGLES = [
   {
-    id: 'budget-mode-personal',
-    key: 'budget_mode',
-    // Der einzige Nicht-Boolean: die Route erwartet den Modus als String.
-    read: (preferences) => preferences.budget_mode === 'personal',
-    payload: (checked) => ({ budget_mode: checked ? 'personal' : 'shared' }),
-    savedKey: 'settings.budgetModeSaved',
-  },
-  {
-    id: 'health-cycle-enabled',
-    key: 'health_cycle_enabled',
-    read: (preferences) => preferences.health_cycle_enabled !== false,
-    payload: (checked) => ({ health_cycle_enabled: checked }),
-    savedKey: 'settings.healthCycleSaved',
-  },
-  {
-    id: 'housekeeping-payment-tasks',
-    key: 'housekeeping_payment_tasks',
-    read: (preferences) => Boolean(preferences.housekeeping_payment_tasks),
-    payload: (checked) => ({ housekeeping_payment_tasks: checked }),
-    savedKey: 'settings.housekeepingPaymentTasksSaved',
-  },
-  {
     id: 'tasks-subtasks-expanded',
     key: 'tasks_subtasks_expanded',
     read: (preferences) => Boolean(preferences.tasks_subtasks_expanded),
@@ -48,11 +26,6 @@ const TOGGLES = [
 // sind), nicht ein Schluessel je Schalter. Angehakt heisst sichtbar - die
 // gespeicherte Form ist die Ausblendliste, dieselbe Umkehrung wie bei
 // disabled_modules/hidden_modules anderswo in diesem Baum.
-const SCHEDULE_TEMPLATES = [
-  ['work', 'schedule.templateWork'],
-  ['school', 'schedule.templateSchool'],
-  ['university', 'schedule.templateUniversity'],
-];
 
 function checkedState(preferences) {
   return new Map(TOGGLES.map((toggle) => [toggle.id, toggle.read(preferences)]));
@@ -65,7 +38,7 @@ function checkedState(preferences) {
  * (registry.js, `part`). Die Ueberschrift mit dem Modulnamen entfaellt deshalb:
  * das Blatt heisst schon so, und darueber steht die Reichweite.
  */
-const PARTS = ['budget', 'health', 'housekeeping', 'tasks', 'schedule'];
+const PARTS = ['tasks'];
 
 /**
  * EIN TRAEGER JE TEIL, ZEILEN DARIN (R17, E9). Bis dahin stand jeder Schalter
@@ -89,40 +62,6 @@ function groupHtml({ titleKey = null, rows, footer }) {
 
 function partHtml(part, preferences, checked) {
   switch (part) {
-    case 'budget':
-      return groupHtml({
-        rows: settingSwitchRowHtml({
-          label: t('settings.budgetModePersonalLabel'),
-          checked: checked.get('budget-mode-personal'),
-          attrs: { id: 'budget-mode-personal', 'aria-describedby': 'budget-mode-hint' },
-        }),
-        footer: `
-      <p class="form-hint settings-group__footer" id="budget-mode-hint">${t('settings.budgetModeHint')}</p>
-      <p class="form-hint settings-group__footer">
-        ${t('settings.currencyMovedHint')}
-        <a href="${APPEARANCE_PATH}" id="budget-region-link">${t('settings.regionTitle')}</a>
-      </p>`,
-      });
-    case 'health':
-      return groupHtml({
-        rows: settingSwitchRowHtml({
-          label: t('settings.healthCycleEnableLabel'),
-          checked: checked.get('health-cycle-enabled'),
-          attrs: { id: 'health-cycle-enabled', 'aria-describedby': 'health-cycle-hint' },
-        }),
-        footer: `
-      <p class="form-hint settings-group__footer" id="health-cycle-hint">${t('settings.healthCycleHint')}</p>`,
-      });
-    case 'housekeeping':
-      return groupHtml({
-        rows: settingSwitchRowHtml({
-          label: t('settings.housekeepingPaymentTasksLabel'),
-          checked: checked.get('housekeeping-payment-tasks'),
-          attrs: { id: 'housekeeping-payment-tasks', 'aria-describedby': 'housekeeping-payment-tasks-hint' },
-        }),
-        footer: `
-      <p class="form-hint settings-group__footer" id="housekeeping-payment-tasks-hint">${t('settings.housekeepingPaymentTasksHint')}</p>`,
-      });
     case 'tasks':
       return groupHtml({
         rows: settingSwitchRowHtml({
@@ -132,17 +71,6 @@ function partHtml(part, preferences, checked) {
         }),
         footer: `
       <p class="form-hint settings-group__footer" id="tasks-subtasks-expanded-hint">${t('settings.tasksSubtasksExpandedHint')}</p>`,
-      });
-    case 'schedule':
-      return groupHtml({
-        titleKey: 'settings.scheduleTemplatesTitle',
-        rows: SCHEDULE_TEMPLATES.map(([key, labelKey]) => settingSwitchRowHtml({
-          label: t(labelKey),
-          checked: !(preferences.schedule_hidden_templates ?? []).includes(key),
-          attrs: { id: `schedule-template-${key}`, 'data-template': key },
-        })).join(''),
-        footer: `
-      <p class="form-hint settings-group__footer">${t('settings.scheduleTemplatesHint')}</p>`,
       });
     default:
       return '';
@@ -159,12 +87,6 @@ function renderPage(container, preferences, part) {
 }
 
 function bindEvents(container) {
-  const link = container.querySelector('#budget-region-link');
-  link?.addEventListener('click', (event) => {
-    if (!window.yuvomi?.navigate) return;
-    event.preventDefault();
-    window.yuvomi.navigate(APPEARANCE_PATH);
-  });
 
   for (const toggle of TOGGLES) {
     const input = container.querySelector(`#${toggle.id}`);
@@ -185,22 +107,7 @@ function bindEvents(container) {
   // Kein Eintrag in TOGGLES: die drei Kontrollkaestchen teilen sich EINEN
   // Praeferenz-Schluessel (die Ausblendliste), ein Klick muss also alle drei
   // aktuellen Zustaende einsammeln, nicht nur den eigenen.
-  const templateInputs = SCHEDULE_TEMPLATES.map(([key]) => container.querySelector(`#schedule-template-${key}`));
-  for (const input of templateInputs) {
-    input?.addEventListener('change', async () => {
-      templateInputs.forEach((el) => { if (el) el.disabled = true; });
-      try {
-        const hidden = templateInputs.filter((el) => el && !el.checked).map((el) => el.dataset.template);
-        await savePreferences({ schedule_hidden_templates: hidden });
-        window.yuvomi?.showToast(t('settings.scheduleTemplatesSaved'), 'success');
-      } catch (error) {
-        input.checked = !input.checked;
-        window.yuvomi?.showToast(error.message || t('common.errorGeneric'), 'danger');
-      } finally {
-        templateInputs.forEach((el) => { if (el?.isConnected) el.disabled = false; });
-      }
-    });
-  }
+
 }
 
 // Welcher Teil, sagt der Abschnitt (registry.js `props.part`): die Shell

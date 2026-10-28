@@ -12,7 +12,7 @@ import { authHeroHtml, authErrorHtml, wirePasswordToggle, passwordRuleHtml, flag
 import { browserTimeZone } from '/utils/timezone.js';
 
 const VERSION_URL = '/api/v1/version';
-const DEFAULT_APP_NAME = 'Yuvomi';
+const DEFAULT_APP_NAME = 'Lamber Cockpit';
 const APP_NAME_STORAGE_KEY = 'yuvomi-app-name';
 const USERNAME_RE = /^[a-zA-Z0-9._-]{3,64}$/;
 

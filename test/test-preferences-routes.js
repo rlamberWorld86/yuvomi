@@ -88,7 +88,7 @@ test('GET / liefert die dokumentierten Defaults', async () => {
   assert.equal(body.data.date_format, 'dmy');
   assert.equal(body.data.time_format, '24h');
   assert.equal(body.data.week_start, 'monday');
-  assert.equal(body.data.app_name, 'Yuvomi');
+  assert.equal(body.data.app_name, 'Lamber Cockpit');
   assert.equal(body.data.budget_mode, 'shared');
   assert.equal(body.data.calendar_default_duration, 60);
   assert.deepEqual(body.data.visible_meal_types, ['breakfast', 'lunch', 'dinner', 'snack']);
@@ -338,9 +338,9 @@ test('PUT app_name: zu lang -> 400', async () => {
 });
 test('PUT app_name: gültig -> persist, leer -> Rückfall auf Default', async () => {
   assert.equal((await put({ app_name: 'Familie Muster' })).body.data.app_name, 'Familie Muster');
-  // Leerer Wert löscht -> GET fällt auf den Default 'Yuvomi' zurück.
-  assert.equal((await put({ app_name: '   ' })).body.data.app_name, 'Yuvomi');
-  assert.equal((await get()).body.data.app_name, 'Yuvomi');
+  // Leerer Wert löscht -> GET fällt auf den Default 'Lamber Cockpit' zurück.
+  assert.equal((await put({ app_name: '   ' })).body.data.app_name, 'Lamber Cockpit');
+  assert.equal((await get()).body.data.app_name, 'Lamber Cockpit');
 });
 
 // --------------------------------------------------------

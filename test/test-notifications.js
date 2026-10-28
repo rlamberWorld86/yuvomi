@@ -1218,7 +1218,7 @@ test('admin notification routes manage channels and test sends', async () => {
   const testSend = await call(makeApp(), 'POST', `/notifications/channels/${created.json.data.id}/test`, {});
   assert.equal(testSend.status, 200);
   assert.equal(sent.length, 1);
-  assert.match(sent[0].body, /Yuvomi/);
+  assert.match(sent[0].body, /Lamber Cockpit/);
 
   const deleted = await call(makeApp(), 'DELETE', `/notifications/channels/${created.json.data.id}`);
   assert.equal(deleted.status, 200);

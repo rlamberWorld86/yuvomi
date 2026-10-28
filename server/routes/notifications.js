@@ -113,8 +113,8 @@ export function buildRouter({
       const channel = store.getChannel(id, { includeSecrets: true });
       if (!channel) return res.status(404).json({ error: 'Notification channel not found.', code: 404 });
       const payload = {
-        title: 'Yuvomi',
-        body: 'Yuvomi notification test',
+        title: 'Lamber Cockpit',
+        body: 'Lamber Cockpit notification test',
         url: '/settings/personal/notifications',
         tag: `notification-channel-test-${id}`,
         priority: 'default',

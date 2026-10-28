@@ -4,7 +4,6 @@ import { sortNavigationItems } from './module-order.js';
 // und dort zeigte ein absoluter Pfad auf die Dateisystem-Wurzel. Im Browser
 // loest beides auf dieselbe Adresse auf, es bleibt also EIN Rechte-Speicher.
 import { canAccessNavModule } from '../permissions.js';
-import { moduleDisplayLabel, resolveExtensionLabel } from '../utils/extension-i18n.js';
 
 export const SETTINGS_STORAGE_KEY = 'yuvomi:settings:path';
 export const LEGACY_SETTINGS_STORAGE_KEY = 'yuvomi:settings:tab';
@@ -33,40 +32,12 @@ export const SETTINGS_DOMAINS = freezeEntries([
   { id: 'modules', labelKey: 'settings.domainModules', icon: 'layout-grid', adminOnly: false },
 ]);
 
-let extensionSettingsLeaves = [];
-let extensionSettingsSections = [];
 
 /** Refresh settings sheets from the same enabled module list used by navigation. */
-export function setExtensionSettingsModules(modules) {
-  const enabled = (Array.isArray(modules) ? modules : [])
-    .filter((module) => module?.enabled && module.status === 'enabled' && module.settings?.entry);
-  extensionSettingsLeaves = enabled.map((module) => Object.freeze({
-    id: `extension-${module.id}`,
-    domainId: 'modules',
-    path: `/settings/modules/ext/${module.id}`,
-    // Same icon as the navigation and the module list.
-    icon: module.menu?.icon || module.icon || 'box',
-    module: `third-party-${module.id}`,
-    extensionModule: module,
-  }));
-  extensionSettingsSections = enabled.flatMap((module) => module.settings.sections.map((scope) => Object.freeze({
-    id: `extension-${module.id}-${scope}`,
-    sheetId: `extension-${module.id}`,
-    scope,
-    adminOnly: scope === 'household',
-    loader: () => import(module.settings.entry),
-  })));
-}
 
-export function extensionSettingsPaths() {
-  return extensionSettingsLeaves.map((leaf) => leaf.path);
-}
 
 export function settingsLeafLabel(leaf, translate) {
-  const module = leaf?.extensionModule;
-  if (!module) return translate(leaf.labelKey);
-  // Same name as the navigation unless the sheet has its own translated title.
-  return resolveExtensionLabel(module.id, { labelKey: module.settings.labelKey, fallback: moduleDisplayLabel(module) });
+  return translate(leaf.labelKey);
 }
 
 /**
@@ -80,13 +51,12 @@ export function settingsLeafLabel(leaf, translate) {
  * @returns {string}
  */
 export function settingsLeafDescription(leaf, translate, user = null) {
-  if (leaf?.extensionModule?.description) return leaf.extensionModule.description;
   const key = (user?.sso_only === true && leaf?.ssoOnlyDescriptionKey) || leaf?.descriptionKey;
   return key ? translate(key) : '';
 }
 
-function allSettingsLeaves() { return [...SETTINGS_LEAVES, ...extensionSettingsLeaves]; }
-function allSettingsSections() { return [...SETTINGS_SECTIONS, ...extensionSettingsSections]; }
+function allSettingsLeaves() { return SETTINGS_LEAVES; }
+function allSettingsSections() { return SETTINGS_SECTIONS; }
 
 /** Reichweite eines Abschnitts: meine Vorgaben oder die des ganzen Haushalts. */
 export const SETTINGS_SCOPES = Object.freeze(['mine', 'household']);
@@ -167,24 +137,6 @@ export const SETTINGS_SECTIONS = freezeEntries([
     loader: () => import('/settings/pages/personal-device.js'),
   },
   {
-    // Geraetelokal wie die Installation (R19): Wand-Modus und Bildschirmschoner
-    // stehen im Blatt "Dieses Geraet", gerendert von personal-appearance.js.
-    id: 'device-display',
-    sheetId: 'personal-device',
-    scope: 'mine',
-    labelKey: 'settings.sectionDeviceDisplay',
-    descriptionKey: 'settings.wallModeHint',
-    options: [
-      { key: 'settings.wallModeLabel', synonyms: 'settingsSynonyms.wallMode' },
-      'settings.screensaverIdleLabel',
-      'settings.screensaverClockLabel',
-      'settings.screensaverCoverLabel',
-    ],
-    adminOnly: false,
-    loader: () => import('/settings/pages/personal-appearance.js'),
-    props: { part: 'device' },
-  },
-  {
     id: 'personal-notifications',
     sheetId: 'personal-notifications',
     scope: 'mine',
@@ -196,19 +148,6 @@ export const SETTINGS_SECTIONS = freezeEntries([
     ],
     adminOnly: false,
     loader: () => import('/settings/pages/notifications.js'),
-  },
-  {
-    id: 'personal-weather',
-    sheetId: 'personal-weather',
-    scope: 'mine',
-    labelKey: 'settings.pageWeather',
-    descriptionKey: 'settings.pageWeatherDescription',
-    options: [
-      'settings.personalWeatherTitle',
-      'settings.weatherAutoLocateLabel',
-    ],
-    adminOnly: false,
-    loader: () => import('/settings/pages/personal-weather.js'),
   },
 
   // ── Haushalt ───────────────────────────────────────────────────────────────
@@ -239,48 +178,6 @@ export const SETTINGS_SECTIONS = freezeEntries([
     loader: () => import('/settings/pages/admin-permissions.js'),
   },
   {
-    // Ein Wandtablett anzulegen heisst, einem Geraet dauerhaft Zugang zum
-    // Haushalt zu geben; jede Route des Blatts traegt `requireAdmin` (#1208).
-    id: 'admin-displays',
-    sheetId: 'admin-displays',
-    scope: 'household',
-    labelKey: 'settings.pageDisplays',
-    descriptionKey: 'settings.pageDisplaysDescription',
-    options: [
-      'settings.displayPairingCodeLabel',
-      'settings.displayScreensaverLabel',
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/admin-displays.js'),
-  },
-  {
-    id: 'admin-email',
-    sheetId: 'admin-email',
-    scope: 'household',
-    labelKey: 'settings.pageEmail',
-    descriptionKey: 'settings.pageEmailDescription',
-    options: [
-      { key: 'email.host', terms: ['SMTP'] },
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/admin-email.js'),
-  },
-  {
-    id: 'admin-backup',
-    sheetId: 'admin-backup',
-    scope: 'household',
-    labelKey: 'settings.pageBackupRestore',
-    descriptionKey: 'settings.pageBackupRestoreDescription',
-    options: [
-      'settings.backupDownloadTitle',
-      'settings.backupRestoreTitle',
-      'settings.backupSchedulerTitle',
-      'settings.backupWebdavEnabled',
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/admin-backup.js'),
-  },
-  {
     id: 'admin-system',
     sheetId: 'admin-system',
     scope: 'household',
@@ -292,45 +189,6 @@ export const SETTINGS_SECTIONS = freezeEntries([
     ],
     adminOnly: true,
     loader: () => import('/settings/pages/admin-system.js'),
-  },
-  {
-    id: 'admin-api',
-    sheetId: 'admin-api',
-    scope: 'household',
-    labelKey: 'settings.pageApiAccess',
-    descriptionKey: 'settings.pageApiAccessDescription',
-    options: [
-      'settings.apiTokensTitle',
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/admin-api.js'),
-  },
-  {
-    // Serverweite Dienstanbindung, deren Zugangsdaten der Browser nie sieht (#693).
-    id: 'admin-immich',
-    sheetId: 'admin-integrations',
-    scope: 'household',
-    labelKey: 'settings.pageImmich',
-    descriptionKey: 'settings.pageImmichDescription',
-    options: [
-      'settings.immichServerUrl',
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/admin-immich.js'),
-  },
-  {
-    // Der Haushalts-Standardstandort des Wetters - eine haushaltweite Quelle;
-    // das Gegenstueck je Mitglied ist `personal-weather` im Konto.
-    id: 'admin-weather',
-    sheetId: 'admin-integrations',
-    scope: 'household',
-    labelKey: 'settings.pageHouseholdWeather',
-    descriptionKey: 'settings.pageHouseholdWeatherDescription',
-    options: [
-      'settings.weatherTitle',
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/admin-weather.js'),
   },
 
   // ── Module: Querschnitt ────────────────────────────────────────────────────
@@ -363,23 +221,6 @@ export const SETTINGS_SECTIONS = freezeEntries([
     ],
     adminOnly: false,
     loader: () => import('/settings/pages/modules-navigation.js'),
-  },
-  {
-    // Ein Modul ist Code vom selben Ursprung, der mit der Sitzung jedes
-    // Mitglieds laeuft, das es oeffnet. Es ueber die Oberflaeche zu
-    // installieren ist dasselbe wie einen Ordner auf den Server zu kopieren -
-    // jede Route traegt `requireAdmin` (server/routes/modules.js).
-    id: 'modules-install',
-    sheetId: 'modules-install',
-    scope: 'household',
-    labelKey: 'settings.pageInstallModule',
-    descriptionKey: 'settings.pageInstallModuleDescription',
-    options: [
-      { key: 'settings.installModuleGithubTitle', terms: ['GitHub'] },
-      { key: 'settings.installModuleZipTitle', terms: ['ZIP'] },
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/modules-install.js'),
   },
 
   // ── Module: je Modul ein Blatt ─────────────────────────────────────────────
@@ -494,37 +335,6 @@ export const SETTINGS_SECTIONS = freezeEntries([
     loader: () => import('/settings/pages/sync-calendar.js'),
   },
   {
-    // Vorlauf, Ueberstunden und Wochenstunden haengen an der eigenen users-
-    // Zeile (server/routes/schedule-preferences.js), die Route traegt keinen
-    // Admin-Check. Bis R14 stand das als Karte im Tab "Auswertung"
-    // (Re-Critique 2026-09-28, A2 P2-3).
-    id: 'personal-schedule',
-    sheetId: 'module-schedule',
-    scope: 'mine',
-    labelKey: 'schedule.mySettings',
-    descriptionKey: 'settings.pageScheduleMineDescription',
-    options: [
-      'schedule.reminderToggle',
-      'schedule.overtimeTrackingToggle',
-      'schedule.weeklyHoursLabel',
-    ],
-    adminOnly: false,
-    loader: () => import('/settings/pages/personal-schedule.js'),
-  },
-  {
-    id: 'options-schedule',
-    sheetId: 'module-schedule',
-    scope: 'household',
-    labelKey: 'settings.scheduleTemplatesTitle',
-    descriptionKey: 'settings.scheduleTemplatesHint',
-    options: [
-      'settings.scheduleTemplatesTitle',
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/modules-options.js'),
-    props: { part: 'schedule' },
-  },
-  {
     // `tasks_default_target` schreibt per `cfgUserSet` pro Nutzer: in welche
     // Erinnerungsliste MEINE neuen Aufgaben laufen, entscheide ich (#695).
     id: 'personal-tasks',
@@ -591,19 +401,6 @@ export const SETTINGS_SECTIONS = freezeEntries([
     loader: () => import('/settings/pages/sync-contacts.js'),
   },
   {
-    id: 'options-budget',
-    sheetId: 'module-budget',
-    scope: 'household',
-    labelKey: 'settings.budgetModeTitle',
-    descriptionKey: 'settings.budgetModeHint',
-    options: [
-      'settings.budgetModePersonalLabel',
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/modules-options.js'),
-    props: { part: 'budget' },
-  },
-  {
     // Dateiname und ID bleiben `documents-*`: interne Bezeichner, die sonst den
     // sw.js-Precache und zwei Test-Dateien mitziehen.
     id: 'documents-storage',
@@ -630,130 +427,11 @@ export const SETTINGS_SECTIONS = freezeEntries([
     adminOnly: true,
     loader: () => import('/settings/pages/documents-dms.js'),
   },
-  {
-    id: 'options-housekeeping',
-    sheetId: 'module-housekeeping',
-    scope: 'household',
-    labelKey: 'settings.housekeepingPaymentsTitle',
-    descriptionKey: 'settings.housekeepingPaymentTasksHint',
-    options: [
-      'settings.housekeepingPaymentTasksLabel',
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/modules-options.js'),
-    props: { part: 'housekeeping' },
-  },
-  {
-    // Ohne den frueheren Schalter "Belohnungen aktivieren": der war ein
-    // zweiter An/Aus neben Aktive Module (A7 P1-3).
-    id: 'modules-rewards',
-    sheetId: 'module-rewards',
-    scope: 'household',
-    labelKey: 'settings.pageRewardsModule',
-    descriptionKey: 'settings.sheetRewardsDescription',
-    options: [
-      'settings.rewardsApprovalLabel',
-      'settings.rewardsDefaultPointsLabel',
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/modules-rewards.js'),
-  },
-  {
-    // Ob ICH den Zyklus sehen will, entscheide ich (#760) - ob der Haushalt ihn
-    // fuehrt, steht in `options-health` darunter.
-    id: 'personal-health',
-    sheetId: 'module-health',
-    scope: 'mine',
-    labelKey: 'settings.pageHealthPersonal',
-    descriptionKey: 'settings.pageHealthPersonalDescription',
-    options: [
-      'settings.healthCyclePersonalLabel',
-      // Die Zyklusvorgaben wohnen im Dialog der Zyklusseite; das Blatt fuehrt
-      // dorthin, und die Suche findet den Weg ueber den Satz davor, der die
-      // Vorgaben aufzaehlt (R21, D7). Beides steht auf dem Blatt
-      // (test:settings-copy).
-      { key: 'health.cycle.settings.title', also: ['settings.healthCycleSettingsHint'] },
-      'settings.healthPreventionNotifyCaregiversLabel',
-      'settings.healthVisibilityTitle',
-    ],
-    adminOnly: false,
-    loader: () => import('/settings/pages/personal-health.js'),
-  },
-  {
-    id: 'options-health',
-    sheetId: 'module-health',
-    scope: 'household',
-    labelKey: 'health.tabs.cycle',
-    descriptionKey: 'settings.healthCycleHint',
-    options: [
-      'settings.healthCycleEnableLabel',
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/modules-options.js'),
-    props: { part: 'health' },
-  },
-  {
-    // Der Vorsorge-Typregister ist ein Haushaltskatalog ohne Voreinstellung (D2).
-    id: 'modules-health',
-    sheetId: 'module-health',
-    scope: 'household',
-    labelKey: 'settings.pageHealthModule',
-    descriptionKey: 'settings.pageHealthModuleDescription',
-    options: [
-      'settings.healthPreventionTypesTitle',
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/modules-health.js'),
-  },
   // DIE EXPORTE STEHEN IM BLATT IHRES MODULS (R14, A7 P2-3). Oma Ingrid sucht
   // den Schichtplan-Export im Blatt Schichtplan, nicht unter Kalender. Jeder
   // Token haengt an der eigenen users-Zeile, keine Route traegt einen
   // Admin-Check (#770) - deshalb "Fuer mich". Inventar und Entsorgung hatten
   // kein Blatt; ihr Feed ist ihr erster Abschnitt.
-  {
-    id: 'feed-schedule',
-    sheetId: 'module-schedule',
-    scope: 'mine',
-    labelKey: 'settings.scheduleFeedTitle',
-    descriptionKey: 'settings.scheduleFeedDescription',
-    options: [{ key: 'settings.scheduleFeedTitle', terms: ['ICS', 'iCal'] }],
-    adminOnly: false,
-    loader: () => import('/settings/pages/personal-feeds.js'),
-    props: { part: 'schedule' },
-  },
-  {
-    id: 'feed-cycle',
-    sheetId: 'module-health',
-    scope: 'mine',
-    labelKey: 'settings.cycleFeedTitle',
-    descriptionKey: 'settings.cycleFeedDescription',
-    options: [{ key: 'settings.cycleFeedTitle', terms: ['ICS', 'iCal'] }],
-    adminOnly: false,
-    loader: () => import('/settings/pages/personal-feeds.js'),
-    props: { part: 'cycle' },
-  },
-  {
-    id: 'feed-inventory',
-    sheetId: 'module-inventory',
-    scope: 'mine',
-    labelKey: 'settings.inventoryFeedTitle',
-    descriptionKey: 'settings.inventoryFeedDescription',
-    options: [{ key: 'settings.inventoryFeedTitle', terms: ['ICS', 'iCal'] }],
-    adminOnly: false,
-    loader: () => import('/settings/pages/personal-feeds.js'),
-    props: { part: 'inventory' },
-  },
-  {
-    id: 'feed-waste',
-    sheetId: 'module-waste',
-    scope: 'mine',
-    labelKey: 'settings.wasteFeedTitle',
-    descriptionKey: 'settings.wasteFeedDescription',
-    options: [{ key: 'settings.wasteFeedTitle', terms: ['ICS', 'iCal'] }],
-    adminOnly: false,
-    loader: () => import('/settings/pages/personal-feeds.js'),
-    props: { part: 'waste' },
-  },
 ]);
 
 /**
@@ -772,16 +450,10 @@ export const SETTINGS_LEAVES = freezeEntries([
   { id: 'personal-appearance', domainId: 'personal', path: '/settings/personal/appearance', labelKey: 'settings.pageAppearance', descriptionKey: 'settings.pageAppearanceDescription', icon: 'palette' },
   { id: 'personal-device', domainId: 'personal', path: '/settings/personal/device', labelKey: 'settings.pageDevice', descriptionKey: 'settings.pageDeviceDescription', icon: 'smartphone' },
   { id: 'personal-notifications', domainId: 'personal', path: '/settings/personal/notifications', labelKey: 'settings.pageNotifications', descriptionKey: 'settings.pageNotificationsDescription', icon: 'bell' },
-  { id: 'personal-weather', domainId: 'personal', path: '/settings/personal/weather', labelKey: 'settings.pageWeather', descriptionKey: 'settings.pageWeatherDescription', icon: 'cloud-sun' },
   // Haushalt
   { id: 'admin-family', domainId: 'admin', path: '/settings/admin/family', labelKey: 'settings.pageFamilyRoles', descriptionKey: 'settings.pageFamilyRolesDescription', icon: 'users' },
   { id: 'admin-permissions', domainId: 'admin', path: '/settings/admin/permissions', labelKey: 'settings.pagePermissions', descriptionKey: 'settings.pagePermissionsDescription', icon: 'shield-check' },
-  { id: 'admin-displays', domainId: 'admin', path: '/settings/admin/displays', labelKey: 'settings.pageDisplays', descriptionKey: 'settings.pageDisplaysDescription', icon: 'tablet-smartphone' },
-  { id: 'admin-email', domainId: 'admin', path: '/settings/admin/email', labelKey: 'settings.pageEmail', descriptionKey: 'settings.pageEmailDescription', icon: 'mail' },
-  { id: 'admin-backup', domainId: 'admin', path: '/settings/admin/backup', labelKey: 'settings.pageBackupRestore', descriptionKey: 'settings.pageBackupRestoreDescription', icon: 'database-backup' },
   { id: 'admin-system', domainId: 'admin', path: '/settings/admin/system', labelKey: 'settings.pageSystem', descriptionKey: 'settings.pageSystemDescription', icon: 'info' },
-  { id: 'admin-api', domainId: 'admin', path: '/settings/admin/api', labelKey: 'settings.pageApiAccess', descriptionKey: 'settings.pageApiAccessDescription', icon: 'key-round' },
-  { id: 'admin-integrations', domainId: 'admin', path: '/settings/admin/integrations', labelKey: 'settings.pageIntegrations', descriptionKey: 'settings.pageIntegrationsDescription', icon: 'plug' },
   // Module - in der Reihenfolge der Seitenleiste ohne eigene Anordnung
   // (settingsSheetsForDomain sortiert nach Gruppe und Haushalts-Reihenfolge).
   { id: 'modules-active', domainId: 'modules', path: '/settings/modules/active', labelKey: 'settings.pageActiveModules', descriptionKey: 'settings.pageActiveModulesDescription', icon: 'toggle-right' },
@@ -792,20 +464,12 @@ export const SETTINGS_LEAVES = freezeEntries([
   // Adresse: die OAuth-Rueckkehr und die Alt-Pfade landen hier.
   { id: 'module-calendar-sync', domainId: 'modules', path: '/settings/modules/calendar-sync', labelKey: 'settings.pageSyncCalendar', descriptionKey: 'settings.pageSyncCalendarDescription', icon: 'refresh-cw', module: 'calendar', moduleStatus: false },
   { id: 'module-tasks', domainId: 'modules', path: '/settings/modules/tasks', labelKey: 'nav.tasks', descriptionKey: 'settings.sheetTasksDescription', icon: 'check-square', module: 'tasks' },
-  { id: 'module-rewards', domainId: 'modules', path: '/settings/modules/rewards', labelKey: 'nav.rewards', descriptionKey: 'settings.sheetRewardsDescription', icon: 'award', module: 'rewards' },
-  { id: 'module-schedule', domainId: 'modules', path: '/settings/modules/schedule', labelKey: 'nav.schedule', descriptionKey: 'settings.sheetScheduleDescription', icon: 'briefcase-business', module: 'schedule' },
   { id: 'module-kitchen', domainId: 'modules', path: '/settings/modules/kitchen', labelKey: 'nav.kitchen', descriptionKey: 'settings.pageKitchenDescription', icon: 'utensils', module: 'kitchen' },
-  { id: 'module-housekeeping', domainId: 'modules', path: '/settings/modules/housekeeping', labelKey: 'nav.housekeeping', descriptionKey: 'settings.sheetHousekeepingDescription', icon: 'paintbrush', module: 'housekeeping' },
-  { id: 'module-waste', domainId: 'modules', path: '/settings/modules/waste', labelKey: 'nav.waste', descriptionKey: 'settings.sheetWasteDescription', icon: 'trash-2', module: 'waste' },
   { id: 'module-documents', domainId: 'modules', path: '/settings/modules/documents', labelKey: 'nav.documents', descriptionKey: 'settings.sheetDocumentsDescription', icon: 'folder-lock', module: 'documents' },
-  { id: 'module-inventory', domainId: 'modules', path: '/settings/modules/inventory', labelKey: 'nav.inventory', descriptionKey: 'settings.sheetInventoryDescription', icon: 'package', module: 'inventory' },
   { id: 'module-contacts', domainId: 'modules', path: '/settings/modules/contacts', labelKey: 'nav.contacts', descriptionKey: 'settings.pageSyncContactsDescription', icon: 'book-user', module: 'contacts' },
-  { id: 'module-health', domainId: 'modules', path: '/settings/modules/health', labelKey: 'nav.health', descriptionKey: 'settings.sheetHealthDescription', icon: 'heart-pulse', module: 'health' },
-  { id: 'module-budget', domainId: 'modules', path: '/settings/modules/budget', labelKey: 'nav.budget', descriptionKey: 'settings.sheetBudgetDescription', icon: 'wallet', module: 'budget' },
   // `placement: 'end'` haelt das Blatt hinter den sortierten Modulblaettern
   // (settingsSheetsForDomain): "Hinzufuegen" schliesst die Liste ab, egal wie
   // der Haushalt seine Module anordnet.
-  { id: 'modules-install', domainId: 'modules', path: '/settings/modules/install', labelKey: 'settings.pageInstallModule', descriptionKey: 'settings.pageInstallModuleDescription', icon: 'package-plus', placement: 'end' },
 ]);
 
 /**
@@ -826,21 +490,16 @@ const MOVED_SETTINGS_PATHS = Object.freeze({
   // in das Blatt seines Moduls (`dissolved`, movedSettingsUrl).
   '/settings/personal/feeds': { path: '/settings/modules/calendar', section: 'personal-feeds', dissolved: true },
   '/settings/personal/tasks': { path: '/settings/modules/tasks', section: 'personal-tasks' },
-  '/settings/personal/health': { path: '/settings/modules/health', section: 'personal-health' },
   '/settings/personal/navigation': { path: '/settings/modules/navigation', section: 'modules-navigation' },
-  '/settings/modules/options': { path: '/settings/modules/budget', section: 'options-budget', dissolved: true },
   '/settings/modules/countdowns': { path: '/settings/modules/overview', section: 'modules-countdowns' },
   '/settings/sync/calendar': { path: '/settings/modules/calendar-sync', section: 'sync-calendar' },
   '/settings/sync/contacts': { path: '/settings/modules/contacts', section: 'sync-contacts' },
   '/settings/sync/reminders': { path: '/settings/modules/tasks', section: 'sync-reminders' },
   '/settings/sync/storage': { path: '/settings/modules/documents', section: 'documents-storage' },
   '/settings/sync/dms': { path: '/settings/modules/documents', section: 'documents-dms' },
-  '/settings/admin/weather': { path: '/settings/admin/integrations', section: 'admin-weather' },
-  '/settings/admin/immich': { path: '/settings/admin/integrations', section: 'admin-immich' },
   // Aeltere Umbauten (Critique 2026-07-27).
   '/settings/documents/storage': { path: '/settings/modules/documents', section: 'documents-storage' },
   '/settings/documents/dms': { path: '/settings/modules/documents', section: 'documents-dms' },
-  '/settings/modules/dashboard': { path: '/settings/admin/integrations', section: 'admin-weather' },
 });
 
 /**
@@ -863,15 +522,12 @@ const RETIRED_SETTINGS_OPTIONS = Object.freeze({
 const LEGACY_SETTINGS_PATHS = Object.freeze({
   general: '/settings/personal/appearance',
   meals: '/settings/modules/kitchen',
-  budget: '/settings/modules/budget',
   // Kategorienpflege lebt bewusst im Modul, neben ihren Daten.
   shopping: '/shopping?manage=categories',
   calendar: '/settings/modules/calendar',
   sync: '/settings/sync/calendar',
   account: '/settings/personal/account',
   family: '/settings/admin/family',
-  'api-tokens': '/settings/admin/api',
-  backup: '/settings/admin/backup',
 });
 
 const isAdminUser = (user) => user?.role === 'admin';
@@ -1170,11 +826,11 @@ export function searchSettings(query, { user, translate }) {
   const options = [];
   for (const leaf of visible) {
     for (const section of settingsSheetSections(leaf, user)) {
-      const label = leaf.extensionModule ? settingsLeafLabel(leaf, translate) : translate(section.labelKey);
+      const label = translate(section.labelKey);
       // Ein Abschnitt, der sein Blatt IST (Konto, Haushalt), traegt denselben
       // Namen - der Treffer staende doppelt da.
       if (!leafIds.has(leaf.id) && section.id !== leaf.id
-        && hit(`${label} ${leaf.extensionModule ? settingsLeafDescription(leaf, translate) : translate(section.descriptionKey)}`)) {
+        && hit(`${label} ${translate(section.descriptionKey)}`)) {
         sections.push({ leaf, section, label });
       }
       for (const option of (section.options ?? []).map(optionEntry)) {

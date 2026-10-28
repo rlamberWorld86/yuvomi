@@ -22,17 +22,10 @@ export const BUILT_IN_MODULES = Object.freeze([
   { id: 'dashboard', labelKey: 'nav.dashboard', locked: true },
   { id: 'calendar', labelKey: 'nav.calendar' },
   { id: 'tasks', labelKey: 'nav.tasks' },
-  { id: 'rewards', labelKey: 'nav.rewards' },
   { id: 'notes', labelKey: 'nav.notes' },
-  { id: 'schedule', labelKey: 'nav.schedule' },
   { id: 'contacts', labelKey: 'nav.contacts' },
   { id: 'birthdays', labelKey: 'nav.birthdays' },
-  { id: 'budget', labelKey: 'nav.budget' },
   { id: 'documents', labelKey: 'nav.documents' },
-  { id: 'inventory', labelKey: 'nav.inventory' },
-  { id: 'housekeeping', labelKey: 'nav.housekeeping' },
-  { id: 'waste', labelKey: 'nav.waste' },
-  { id: 'health', labelKey: 'nav.health' },
   { id: 'settings', labelKey: 'nav.settings', locked: true },
 ]);
 

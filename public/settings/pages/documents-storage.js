@@ -7,9 +7,7 @@ import {
   createInfoList,
   createRetryState,
   createSettingRow,
-  createStatusSummary,
-  settingRowHtml,
-  settingSwitchRowHtml
+  createStatusSummary
 } from "/settings/components.js";
 import { reloadAfterSave } from '/utils/reload-after-save.js';
 
@@ -24,131 +22,15 @@ function showToast(message, tone = "default") {
   window.yuvomi?.showToast(message, tone);
 }
 
-function documentStorageTarget(data) {
-  if (data.effective_target) return data.effective_target;
-  if (!data.url) return t("settings.documentStorageNotConfigured");
-  const basePath = data.base_path ?? data.basePath ?? "";
-  return basePath ? `${data.url.replace(/\/+$/, "")}/${String(basePath).replace(/^\/+/, "")}` : data.url;
-}
-
-function backendLabel(activeBackend) {
-  if (activeBackend === "webdav") return t("documents.storageWebdav");
-  if (activeBackend === "google_drive") return t("documents.storageGoogleDrive");
-  if (activeBackend === "local_folder") return t("documents.storageLocalFolder");
-  return t("documents.storageLocal");
-}
-
 function buildStatusSummary(data) {
-  const selectedBackend = data.selected_upload_backend ?? (data.enabled ? "webdav" : "local");
-  const activeBackend = data.active_upload_backend ?? selectedBackend;
-  const activeLabel = backendLabel(activeBackend);
-  const lastTest = data.last_test ?? data.lastTest;
-  const lastTestLabel = formatSyncTime(lastTest) ?? t("settings.documentStorageNeverTested");
-  const lastError = data.last_error ?? data.lastError;
-
-  // The status line is the concrete destination: a folder path, a WebDAV URL,
-  // or the database for the in-DB default.
-  const statusLine =
-    activeBackend === "local_folder"
-      ? data.local_path || data.effective_target || "/documents"
-      : activeBackend === "webdav"
-        ? documentStorageTarget(data)
-        : activeBackend === "google_drive"
-          ? data.google_drive?.folder_name || data.effective_target || t("settings.documentStorageNotConfigured")
-          : t("settings.documentStorageDatabase");
-
-  const details = [
-    `${t("settings.documentStorageSelected")}: ${backendLabel(selectedBackend)}`,
-    `${t("settings.documentStorageEffective")}: ${activeLabel}`
-  ];
-  if (activeBackend === "local_folder") {
-    // Env-only backend: no in-app connection fields, so state that plainly.
-    details.push(t("settings.documentStorageLocalEnvManaged"));
-    if (selectedBackend !== activeBackend) details.push(t("settings.documentStorageOverride"));
-  } else if (activeBackend === "webdav") {
-    details.push(`${t("settings.documentStorageCount")}: ${Number(data.webdav_document_count ?? 0)}`);
-    details.push(`${t("settings.documentStorageLastTest")}: ${lastTestLabel}`);
-  } else if (activeBackend === "google_drive") {
-    details.push(`${t("settings.documentStorageGoogleDriveCount")}: ${Number(data.google_drive?.document_count ?? 0)}`);
-  }
-  if (lastError) {
-    details.push(`${t("settings.documentStorageLastError")}: ${lastError}`);
-  }
-
+  const drive = data.google_drive ?? {};
   return createStatusSummary({
-    title: activeLabel,
-    status: statusLine,
-    details,
-    tone: lastError ? "warning" : "neutral",
-    // Erster Heading nach dem Leaf-Titel: die Sektion trug ihn zuvor als h2 und
-    // wiederholte damit den Blatt-Titel wörtlich (Critique 2026-07-27).
-    level: 2
+    title: t("documents.storageGoogleDrive"),
+    status: drive.sync?.folder_name || t("settings.documentStorageNotConfigured"),
+    details: [t("settings.documentStorageGoogleDriveCount") + ": " + Number(drive.document_count ?? 0)],
+    tone: drive.sync?.last_error ? "warning" : "neutral",
+    level: 2,
   });
-}
-
-function buildConnectionForm() {
-  const form = document.createElement("form");
-  form.className = "settings-form settings-form--compact";
-  form.id = "document-storage-form";
-  form.noValidate = true;
-  form.autocomplete = "off";
-  form.insertAdjacentHTML(
-    "beforeend",
-    `
-    ${/* EIN FORMULAR-DIALEKT (R19, Einstellungen B7): Schalter und vier
-         Felder als Zeilen der Gruppe, Etikett links, Feld rechts; der
-         Env-Hinweis eines Felds steht unter seiner Zeile. */ ''}
-    <div class="row-carrier settings-group">
-      ${settingSwitchRowHtml({
-        label: t("settings.documentStorageEnabled"),
-        attrs: { id: "document-storage-enabled", name: "enabled" },
-      })}
-      ${settingRowHtml({
-        label: t("settings.documentStorageUrl"), labelFor: "document-storage-url",
-        control: `<input class="form-input" type="url" id="document-storage-url" name="url" placeholder="https://..." />`,
-        extra: `<span class="form-hint" data-env-hint="url" hidden>${t("settings.documentStorageEnvHint")}</span>`,
-      })}
-      ${settingRowHtml({
-        label: t("settings.documentStorageUsername"), labelFor: "document-storage-username",
-        control: `<input class="form-input" type="text" id="document-storage-username" name="username" autocomplete="off" />`,
-        extra: `<span class="form-hint" data-env-hint="username" hidden>${t("settings.documentStorageEnvHint")}</span>`,
-      })}
-      ${settingRowHtml({
-        label: t("settings.documentStoragePassword"), labelFor: "document-storage-password",
-        control: `<div class="settings-webdav-pw-wrap">
-          <input class="form-input" type="password" id="document-storage-password" name="password"
-            autocomplete="new-password" placeholder="${t("settings.documentStoragePasswordPlaceholder")}" />
-          <button type="button" class="btn btn--icon btn--ghost settings-webdav-reveal-btn"
-            data-reveal-target="document-storage-password" aria-label="${t("common.togglePasswordVisibility")}">
-            <i data-lucide="eye" aria-hidden="true"></i>
-          </button>
-        </div>`,
-        extra: `<span class="form-hint" data-env-hint="password" hidden>${t("settings.documentStorageEnvHint")}</span>`,
-      })}
-      ${settingRowHtml({
-        label: t("settings.documentStoragePath"), labelFor: "document-storage-path",
-        control: `<input class="form-input" type="text" id="document-storage-path" name="path" />`,
-        extra: `<span class="form-hint" data-env-hint="path" hidden>${t("settings.documentStorageEnvHint")}</span>`,
-      })}
-    </div>
-    <div class="form-hint" data-env-hint="enabled" hidden>${t("settings.documentStorageEnvHint")}</div>
-    <p class="settings-document-storage-warning" id="document-storage-backup-warning" hidden>
-      <i data-lucide="triangle-alert" aria-hidden="true"></i>
-      <span>${t("settings.documentStorageBackupWarning")}</span>
-    </p>
-    <div id="document-storage-test-result" class="form-hint" hidden></div>
-    <div class="settings-form-actions">
-      <button type="button" class="btn btn--secondary" id="document-storage-test-btn">
-        <i data-lucide="plug-zap" aria-hidden="true"></i>
-        ${t("settings.documentStorageTest")}
-      </button>
-      <button type="submit" class="btn btn--primary" id="document-storage-save-btn">
-        ${t("settings.documentStorageSave")}
-      </button>
-    </div>
-  `
-  );
-  return form;
 }
 
 function renderPage(container) {
@@ -159,7 +41,7 @@ function renderPage(container) {
     <section class="settings-section">
       <div class="settings-card" id="document-storage-card">
         <div id="document-storage-banner"></div>
-        <p class="settings-card-description">${t("settings.documentStorageDescription")}</p>
+        <p class="settings-card-description">${t("settings.documentStorageDriveSyncDescription")}</p>
         <div id="document-storage-status-host"></div>
         <div class="settings-providers" id="document-storage-providers-host"></div>
         <div id="document-storage-destination-host"></div>
@@ -167,224 +49,6 @@ function renderPage(container) {
     </section>
   `
   );
-}
-
-function applyConfigToForm(form, data) {
-  const envControlled = data.env_controlled ?? data.envControlled ?? {};
-  const basePath = data.base_path ?? data.basePath ?? "";
-  form._documentStorageConfig = {
-    ...data,
-    base_path: basePath,
-    env_controlled: envControlled
-  };
-
-  form.querySelector("#document-storage-enabled").checked = Boolean(data.enabled);
-  syncBackupWarning(Boolean(data.enabled));
-  form.querySelector("#document-storage-url").value = data.url ?? "";
-  form.querySelector("#document-storage-username").value = data.username ?? "";
-  const passwordInput = form.querySelector("#document-storage-password");
-  passwordInput.value = "";
-  passwordInput.placeholder = data.password_configured ? "****" : t("settings.documentStoragePasswordPlaceholder");
-  form.querySelector("#document-storage-path").value = basePath;
-
-  const fieldIds = {
-    enabled: "document-storage-enabled",
-    url: "document-storage-url",
-    username: "document-storage-username",
-    password: "document-storage-password",
-    path: "document-storage-path"
-  };
-  for (const [field, id] of Object.entries(fieldIds)) {
-    const input = form.querySelector(`#${id}`);
-    const controlled = Boolean(envControlled[field]);
-    if (input) input.disabled = controlled;
-    const hint = form.querySelector(`[data-env-hint="${field}"]`);
-    if (hint) hint.hidden = !controlled;
-  }
-}
-
-function documentStoragePayload(form) {
-  const envControlled = form._documentStorageConfig?.env_controlled ?? {};
-  const payload = {};
-  if (!envControlled.enabled) {
-    payload.enabled = form.querySelector("#document-storage-enabled")?.checked ?? false;
-  }
-  if (!envControlled.url) {
-    payload.url = form.querySelector("#document-storage-url")?.value?.trim() ?? "";
-  }
-  if (!envControlled.username) {
-    payload.username = form.querySelector("#document-storage-username")?.value?.trim() ?? "";
-  }
-  if (!envControlled.path) {
-    payload.path = form.querySelector("#document-storage-path")?.value?.trim() ?? "";
-  }
-  const password = form.querySelector("#document-storage-password")?.value;
-  if (!envControlled.password && password && password !== "****") payload.password = password;
-  return payload;
-}
-
-function hasProtectedDocumentStorageChange(form, payload) {
-  const current = form._documentStorageConfig ?? {};
-  if (Number(current.webdav_document_count ?? 0) < 1) return false;
-  const envControlled = current.env_controlled ?? {};
-  if (Object.hasOwn(payload, "url") && payload.url !== (current.url ?? "")) return true;
-  if (Object.hasOwn(payload, "username") && payload.username !== (current.username ?? "")) return true;
-  if (Object.hasOwn(payload, "path") && payload.path !== (current.base_path ?? "")) return true;
-  return !envControlled.password && Object.hasOwn(payload, "password");
-}
-
-// Die Backup-Warnung betrifft nur WebDAV-Ziele; bei "Lokal" ist sie falsch
-// beunruhigend (Audit A2-25c). Sichtbarkeit folgt dem Aktiviert-Zustand.
-function syncBackupWarning(enabled) {
-  const warning = document.getElementById("document-storage-backup-warning");
-  if (warning) warning.hidden = !enabled;
-}
-
-function bindConnectionForm(container, form, reload) {
-  form.querySelector("#document-storage-enabled")?.addEventListener("change", (event) => {
-    syncBackupWarning(event.currentTarget.checked);
-  });
-
-  form.querySelector("[data-reveal-target]")?.addEventListener("click", (event) => {
-    const button = event.currentTarget;
-    const input = form.querySelector(`#${button.dataset.revealTarget}`);
-    if (!input) return;
-    const reveal = input.type === "password";
-    input.type = reveal ? "text" : "password";
-    const icon = button.querySelector("[data-lucide]");
-    if (icon) icon.dataset.lucide = reveal ? "eye-off" : "eye";
-    window.lucide?.createIcons({ el: button });
-  });
-
-  const testBtn = form.querySelector("#document-storage-test-btn");
-  const result = form.querySelector("#document-storage-test-result");
-  testBtn?.addEventListener("click", async () => {
-    testBtn.disabled = true;
-    if (result) {
-      result.hidden = false;
-      result.textContent = t("settings.documentStorageTesting");
-      result.className = "form-hint";
-    }
-    try {
-      await api.post("/documents/storage/test", documentStoragePayload(form));
-      if (result) {
-        result.textContent = t("settings.documentStorageTestSuccess");
-        result.className = "form-hint settings-document-storage-success";
-      }
-      await reloadAfterSave(() => reload());
-    } catch (err) {
-      if (result) {
-        result.textContent = t("settings.documentStorageTestFailed", { error: err.message });
-        result.className = "form-hint settings-document-storage-error";
-      }
-    } finally {
-      testBtn.disabled = false;
-    }
-  });
-
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const saveBtn = form.querySelector("#document-storage-save-btn");
-    const payload = documentStoragePayload(form);
-    const gefragt = hasProtectedDocumentStorageChange(form, payload);
-    if (gefragt) {
-      const confirmed = await confirmModal(t("settings.documentStorageConfirmExisting"), {
-        confirmLabel: t("common.confirm")
-      });
-      if (!confirmed) return;
-      payload.confirm_existing_access = true;
-    }
-    if (saveBtn) {
-      saveBtn.disabled = true;
-      saveBtn.textContent = t("common.saving");
-    }
-    try {
-      await api.put("/documents/storage/config", payload);
-      showToast(t("settings.documentStorageSaved"), "success");
-      await reloadAfterSave(() => reload());
-      // Nur nach der Rueckfrage: ohne sie schliesst auf diesem Weg kein Dialog,
-      // und das Nachfassen griffe auf den Merker eines frueheren zurueck (#1083).
-      if (gefragt) refocusAfterRender();
-    } catch (err) {
-      showToast(err.message ?? t("common.errorGeneric"), "danger");
-    } finally {
-      if (saveBtn) {
-        saveBtn.disabled = false;
-        saveBtn.textContent = t("settings.documentStorageSave");
-      }
-    }
-  });
-}
-
-function buildDestinationForm(data, reload) {
-  const form = document.createElement("form");
-  form.className = "settings-form settings-form--compact";
-  form.id = "document-storage-destination-form";
-
-  const select = document.createElement("select");
-  select.className = "form-input";
-  select.id = "document-storage-destination";
-
-  const availableBackends = new Set(["local"]);
-  if (data.enabled && data.configured) availableBackends.add("webdav");
-  const drive = data.google_drive ?? {};
-  if (drive.configured && drive.connected) availableBackends.add("google_drive");
-
-  for (const backend of ["local", "webdav", "google_drive"]) {
-    const option = document.createElement("option");
-    option.value = backend;
-    option.textContent = backendLabel(backend);
-    option.disabled = !availableBackends.has(backend);
-    select.appendChild(option);
-  }
-  select.value = data.selected_upload_backend ?? (data.enabled ? "webdav" : "local");
-  form.appendChild(
-    createSettingRow({
-      label: t("settings.documentStorageDestination"),
-      description: t("settings.documentStorageDestinationHint"),
-      control: select
-    })
-  );
-
-  const actions = document.createElement("div");
-  actions.className = "settings-form-actions";
-  const save = document.createElement("button");
-  save.type = "submit";
-  save.className = "btn btn--primary";
-  save.textContent = t("common.save");
-  actions.appendChild(save);
-  form.appendChild(actions);
-
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    save.disabled = true;
-    try {
-      await api.put("/documents/storage/config", { selected_upload_backend: select.value });
-      showToast(t("settings.documentStorageSaved"), "success");
-      await reloadAfterSave(() => reload());
-    } catch (error) {
-      showToast(error.message ?? t("common.errorGeneric"), "danger");
-    } finally {
-      save.disabled = false;
-    }
-  });
-  return form;
-}
-
-// Genau einen Anbieter offen zeigen: den, der als Nächstes Aufmerksamkeit
-// braucht. Reihenfolge: Drive-Creds gesetzt aber noch nicht verbunden (der
-// OAuth-Klick fehlt) > der aktive externe Anbieter (Status offen halten) > gar
-// kein externes Ziel eingerichtet → Drive als beworbenes Standard-Ziel offen.
-// WebDAV klappt nur auf, wenn es das aktive Ziel ist; sonst bleibt alles zu.
-function pickExpandedProvider(data) {
-  const drive = data.google_drive ?? {};
-  const activeBackend = data.active_upload_backend ?? data.selected_upload_backend;
-  if (drive.configured && !drive.connected) return "drive";
-  if (activeBackend === "google_drive") return "drive";
-  if (activeBackend === "webdav") return "webdav";
-  const webdavReady = Boolean(data.enabled && data.configured);
-  if (!drive.connected && !webdavReady) return "drive";
-  return null;
 }
 
 function providerIcon(name) {
@@ -673,27 +337,14 @@ async function loadDocumentStorageConfig(container) {
 
   statusHost.replaceChildren(buildStatusSummary(data));
 
-  // Anbieter-Einrichtung steht über der Ziel-Wahl: erst einrichten, dann wählen.
-  // Der handlungsbedürftige Anbieter startet offen, der Rest bleibt eingeklappt.
-  const expanded = pickExpandedProvider(data);
-  const form = buildConnectionForm();
-  const webdav = createDisclosure({
-    id: "document-storage-connection",
-    summary: t("settings.documentStorageWebdavTitle"),
-    expanded: expanded === "webdav",
-    content: form
-  });
   const drive = createDisclosure({
     id: "document-storage-google-drive",
     summary: t("settings.documentStorageGoogleDriveTitle"),
-    expanded: expanded === "drive",
+    expanded: true,
     content: buildGoogleDriveProvider(data, reload)
   });
-  providersHost.replaceChildren(webdav, drive);
-  destinationHost.replaceChildren(buildDestinationForm(data, reload));
-
-  applyConfigToForm(form, data);
-  bindConnectionForm(container, form, reload);
+  providersHost.replaceChildren(drive);
+  destinationHost.replaceChildren();
   window.lucide?.createIcons({ el: container });
 }
 

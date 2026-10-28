@@ -10,7 +10,7 @@ import {
 } from '/settings/components.js';
 
 const APP_NAME_STORAGE_KEY = 'yuvomi-app-name';
-const DEFAULT_APP_NAME = 'Yuvomi';
+const DEFAULT_APP_NAME = 'Lamber Cockpit';
 
 function safeStorageSet(key, value) {
   try {

@@ -23,9 +23,9 @@
   <!-- iOS-spezifisch -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Yuvomi" />
-  <meta name="description" content="Yuvomi - dein Zuhause an einem Ort" />
-  <title>Yuvomi</title>
+  <meta name="apple-mobile-web-app-title" content="Lamber Cockpit" />
+  <meta name="description" content="Lamber Cockpit - dein Zuhause an einem Ort" />
+  <title>Lamber Cockpit</title>
 
   <!-- PWA -->
   <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
@@ -65,7 +65,7 @@
        Bildschirmschoner). Jede Komponente laedt ihres selbst und zeigt sich erst
        danach (utils/component-style.js); die Stelle haelt die Kaskade wie vorher.
        auth.css laedt der Router als Seitenblatt der Zugangsseiten. -->
-  <meta name="component-styles" content="datepicker category-manager icon-picker document-attach screensaver" />
+  <meta name="component-styles" content="datepicker category-manager icon-picker document-attach" />
   <link rel="stylesheet" href="/styles/detail-view.css" />
   <link rel="stylesheet" href="/styles/typography.css" />
 
@@ -97,7 +97,6 @@
        HTTP/1.1-Verbindungen - gemessen eine volle Sekunde. -->
   <link rel="modulepreload" href="/api.js" />
   <link rel="modulepreload" href="/router.js" />
-  <link rel="modulepreload" href="/components/photo-screensaver.js" />
   <link rel="modulepreload" href="/components/yuvomi-install-prompt.js" />
   <link rel="modulepreload" href="/sw-register.js" />
   <link rel="modulepreload" href="/permissions.js" />
@@ -106,8 +105,6 @@
   <link rel="modulepreload" href="/utils/dashboard-layout-hint.js" />
   <link rel="modulepreload" href="/i18n.js" />
   <link rel="modulepreload" href="/utils/friendly-error.js" />
-  <link rel="modulepreload" href="/utils/extension-widgets.js" />
-  <link rel="modulepreload" href="/utils/extension-i18n.js" />
   <link rel="modulepreload" href="/utils/html.js" />
   <link rel="modulepreload" href="/utils/empty-state.js" />
   <link rel="modulepreload" href="/utils/ux.js" />
@@ -131,9 +128,6 @@
   <link rel="modulepreload" href="/utils/view-transition.js" />
   <link rel="modulepreload" href="/utils/module-accent.js" />
   <link rel="modulepreload" href="/utils/brand-mark.js" />
-  <link rel="modulepreload" href="/utils/health-tabs.js" />
-  <link rel="modulepreload" href="/utils/schedule-tabs.js" />
-  <link rel="modulepreload" href="/utils/health-activity.js" />
   <link rel="modulepreload" href="/utils/search-sections.js" />
   <link rel="modulepreload" href="/utils/help.js" />
   <link rel="modulepreload" href="/utils/skeleton.js" />
@@ -147,7 +141,6 @@
   <link rel="modulepreload" href="/utils/nav-badges.js" />
   <link rel="modulepreload" href="/utils/version.js" />
   <link rel="modulepreload" href="/utils/upload-limit.js" />
-  <link rel="modulepreload" href="/utils/wall-mode.js" />
   <link rel="modulepreload" href="/utils/scroll-restore.js" />
   <link rel="modulepreload" href="/components/modal.js" />
   <link rel="modulepreload" href="/utils/popover-menu.js" />
@@ -157,7 +150,6 @@
   <link rel="modulepreload" href="/nav-icons.js" />
   <link rel="modulepreload" href="/settings/registry.js" />
   <link rel="modulepreload" href="/settings/module-order.js" />
-  <link rel="modulepreload" href="/utils/screensaver-idle.js" />
   <link rel="modulepreload" href="/utils/component-style.js" />
   <link rel="modulepreload" href="/utils/pwa-install.js" />
   <link rel="modulepreload" href="/utils/korean-particles.js" />
@@ -169,7 +161,6 @@
   <link rel="modulepreload" href="/utils/sub-tabs.js" />
   <link rel="modulepreload" href="/utils/date.js" />
   <link rel="modulepreload" href="/utils/segment-indicator.js" />
-  <link rel="modulepreload" href="/utils/health-vitals.js" />
   <link rel="modulepreload" href="/utils/lucide-icons.js" />
   <link rel="modulepreload" href="/utils/content-swap.js" />
   <link rel="modulepreload" href="/utils/overlay-host.js" />
@@ -187,8 +178,6 @@
   <link rel="modulepreload" fetchpriority="low" href="/utils/week-strip.js" />
   <link rel="modulepreload" fetchpriority="low" href="/utils/day-label.js" />
   <link rel="modulepreload" fetchpriority="low" href="/utils/health-cycle.js" />
-  <link rel="modulepreload" fetchpriority="low" href="/utils/health-nutrition.js" />
-  <link rel="modulepreload" fetchpriority="low" href="/components/fasting-controls.js" />
   <link rel="modulepreload" fetchpriority="low" href="/utils/reload-after-save.js" />
   <link rel="modulepreload" fetchpriority="low" href="/utils/birthday-event.js" />
   <link rel="modulepreload" fetchpriority="low" href="/utils/pantry-status.js" />
@@ -196,14 +185,10 @@
   <link rel="modulepreload" fetchpriority="low" href="/utils/pantry-units.js" />
   <link rel="modulepreload" fetchpriority="low" href="/components/user-multi-select.js" />
   <link rel="modulepreload" fetchpriority="low" href="/utils/seal-pair.js" />
-  <link rel="modulepreload" fetchpriority="low" href="/components/wall-timer.js" />
   <link rel="modulepreload" fetchpriority="low" href="/utils/quick-link-url.js" />
   <link rel="modulepreload" fetchpriority="low" href="/utils/meal-types.js" />
   <link rel="modulepreload" fetchpriority="low" href="/utils/recipe-thumb.js" />
   <link rel="modulepreload" fetchpriority="low" href="/utils/note-category-overflow.js" />
-  <link rel="modulepreload" fetchpriority="low" href="/utils/reward-goal.js" />
-  <link rel="modulepreload" fetchpriority="low" href="/utils/health-fasting.js" />
-  <link rel="modulepreload" fetchpriority="low" href="/components/fasting-dial.js" />
   <link rel="modulepreload" fetchpriority="low" href="/components/fasting-help.js" />
   <link rel="modulepreload" fetchpriority="low" href="/settings/components.js" />
   <link rel="modulepreload" fetchpriority="low" href="/utils/tablist.js" />
@@ -233,13 +218,13 @@
          (am Desktop die Seitenleiste). Nichts bewegt sich; die App setzt sich
          an derselben Stelle zusammen. `progressbar` ohne Wert ist "laedt", und
          die Rolle sagt der Screenreader in seiner Sprache an - der Name ist
-         die Marke, fest in jeder Sprache (vorher: "Lade Yuvomi…", immer deutsch). -->
-    <div id="app-loading" class="app-loading" role="progressbar" aria-label="Yuvomi">
+         die Marke, fest in jeder Sprache (vorher: "Lade Lamber Cockpit…", immer deutsch). -->
+    <div id="app-loading" class="app-loading" role="progressbar" aria-label="Lamber Cockpit">
       <div class="app-loading__rail" aria-hidden="true"></div>
       <div class="app-loading__page" aria-hidden="true">
         <div class="app-loading__head">
           <span class="app-loading__seal"><svg class="brand-mark" viewBox="0 0 160 160" fill="none" focusable="false"><defs><linearGradient id="yuvomi-brand-mark-boot" x1="0" y1="0" x2="160" y2="160" gradientUnits="userSpaceOnUse"><stop class="brand-mark__from" offset="0%"/><stop class="brand-mark__to" offset="100%"/></linearGradient></defs><rect width="160" height="160" rx="36" fill="url(#yuvomi-brand-mark-boot)"/><g class="brand-mark__circles"><circle cx="64" cy="72" r="27"/><circle cx="100" cy="78" r="25"/><circle cx="80" cy="106" r="24"/></g></svg></span>
-          <span class="app-loading__logo">Yuvomi</span>
+          <span class="app-loading__logo">Lamber Cockpit</span>
         </div>
         <!-- Die Uebersicht als Skizze (R21 S9b): Gruss, Wetterzeile, "Heute
              wichtig" und das Tagesprogramm als EINE hohe Karte, am Desktop
@@ -261,7 +246,6 @@
   <!-- Module (ES-Module, kein Bundler) -->
   <script type="module" src="/api.js"></script>
   <script type="module" src="/router.js"></script>
-  <script type="module" src="/components/photo-screensaver.js"></script>
 
   <!-- Install-Prompt (PWA) -->
   <yuvomi-install-prompt></yuvomi-install-prompt>

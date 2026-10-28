@@ -13,16 +13,6 @@ import { getPreferences, resetPreferencesCache, savePreferences } from '/setting
 import { settingRowHtml, settingSwitchRowHtml } from '/settings/components.js';
 import { wireTablist } from '/utils/tablist.js';
 import { attachSegmentIndicator } from '/utils/segment-indicator.js';
-import { isWallModeEnabled, setWallModeEnabled } from '/utils/wall-mode.js';
-import {
-  SCREENSAVER_IDLE_STEPS,
-  getScreensaverIdleSeconds,
-  isScreensaverClockOn,
-  isScreensaverCoverOn,
-  setScreensaverClockOn,
-  setScreensaverCoverOn,
-  setScreensaverIdleSeconds,
-} from '/utils/screensaver-idle.js';
 import { setDisplayTimeZone } from '/utils/timezone.js';
 import { adoptZone, zoneHintEl, zoneMismatch } from '/utils/household-zone-hint.js';
 import {
@@ -347,17 +337,9 @@ function clearError(element) {
 
 // Minutes in the UI language (CLDR via formatUnit), so the five steps need no
 // plural keys of their own in 26 locales.
-function screensaverIdleText(seconds) {
-  return formatUnit(seconds / 60, 'minute', { unitDisplay: 'long' });
-}
 
 // Exported so test:screensaver-idle can check the select opens on the stored
 // value.
-export function screensaverIdleOptions() {
-  const current = getScreensaverIdleSeconds();
-  return SCREENSAVER_IDLE_STEPS.map((seconds) => `
-    <option value="${seconds}"${seconds === current ? ' selected' : ''}>${esc(screensaverIdleText(seconds))}</option>`).join('');
-}
 
 /**
  * The clock and full-bleed switches (#1766). Device-local like the select
@@ -365,12 +347,6 @@ export function screensaverIdleOptions() {
  * toast says, since nothing on this page changes visibly. Exported so
  * test:screensaver-device can drive the real handler.
  */
-export function bindScreensaverSwitch(toggle, store) {
-  toggle?.addEventListener('change', () => {
-    store(toggle.checked);
-    window.yuvomi?.showToast(t('settings.screensaverDeviceSaved'), 'success');
-  });
-}
 
 /**
  * Device-local like wall mode: no server request, no preference. The
@@ -378,12 +354,6 @@ export function bindScreensaverSwitch(toggle, store) {
  * a reload, and the toast confirms it like the wall-mode toggle above it.
  * Exported so test:screensaver-idle can drive the real handler.
  */
-export function bindScreensaverIdleSelect(select) {
-  select?.addEventListener('change', () => {
-    const seconds = setScreensaverIdleSeconds(Number(select.value));
-    window.yuvomi?.showToast(t('settings.screensaverIdleSaved', { delay: screensaverIdleText(seconds) }), 'success');
-  });
-}
 
 function renderLoadError(container) {
   container.replaceChildren();
@@ -742,114 +712,9 @@ function mountTimezoneMismatch(container, preferences, isAdmin) {
  * `device-display` (registry.js, `props.part: 'device'`) rendert sie dort -
  * derselbe Baustein, dieselben Handler.
  */
-function deviceDisplayRowsHtml({ screensaverOn = true, isAdmin = false } = {}) {
-  return `
-        <!-- DER WAND-MODUS WOHNT HIER UND NICHT IM ANPASSEN-PANEL.
-             Er ist wie Theme und Sprache GERÄTELOKAL (localStorage) - das
-             Anpassen-Panel schreibt dagegen die haushaltweite Widget-Konfiguration
-             auf den Server. Ein gerätelokaler Schalter dort wäre eine zweite
-             Speicher-Semantik im selben Panel; und der Anpassen-Modus bearbeitet
-             das Raster, während dieser Schalter eine Betriebsart wählt. -->
-        ${settingSwitchRowHtml({
-          label: t('settings.wallModeLabel'),
-          checked: isWallModeEnabled(),
-          icon: 'tablet',
-          description: t('settings.wallModeHint'),
-          descriptionId: 'wall-mode-hint',
-          attrs: { id: 'wall-mode-toggle', 'aria-describedby': 'wall-mode-hint' },
-        })}
-        <!-- Next to wall mode and for the same reason: device-local (#885). A
-             photo frame and a kitchen tablet in one household want different
-             delays, and a household value would reach every phone too. The
-             Immich connection itself stays under Household -> Integrations.
-             OHNE IMMICH KEINE OPTIONEN (R20, Re-Critique 2026-10-17 a5 P3):
-             drei Schalter fuer etwas, das nie startet, standen aktiv da. Jetzt
-             EINE Zeile, die sagt, was fehlt - fuer Admins mit dem Weg dorthin. -->
-        ${screensaverOn ? '' : settingRowHtml({
-          label: t('settings.screensaverOffTitle'),
-          description: t('settings.screensaverNeedsImmich'),
-          descriptionId: 'screensaver-off-hint',
-          control: isAdmin
-            ? `<a class="btn btn--secondary" id="screensaver-connect" href="/settings/admin/integrations" aria-describedby="screensaver-off-hint">${esc(t('settings.screensaverConnectImmich'))}</a>`
-            : '',
-          attrs: { id: 'screensaver-off-row' },
-        })}
-        ${!screensaverOn ? '' : `${settingRowHtml({
-          label: t('settings.screensaverIdleLabel'),
-          labelFor: 'screensaver-idle-select',
-          description: t('settings.screensaverIdleHint'),
-          descriptionId: 'screensaver-idle-hint',
-          control: `<select class="form-input" id="screensaver-idle-select" aria-describedby="screensaver-idle-hint">
-            ${screensaverIdleOptions()}
-          </select>`,
-        })}
-        <!-- What the screensaver shows, on this device too (#1766). -->
-        ${settingSwitchRowHtml({
-          label: t('settings.screensaverClockLabel'),
-          checked: isScreensaverClockOn(),
-          icon: 'clock',
-          description: t('settings.screensaverClockHint'),
-          descriptionId: 'screensaver-clock-hint',
-          attrs: { id: 'screensaver-clock-toggle', 'aria-describedby': 'screensaver-clock-hint' },
-        })}
-        ${settingSwitchRowHtml({
-          label: t('settings.screensaverCoverLabel'),
-          checked: isScreensaverCoverOn(),
-          icon: 'maximize',
-          description: t('settings.screensaverCoverHint'),
-          descriptionId: 'screensaver-cover-hint',
-          attrs: { id: 'screensaver-cover-toggle', 'aria-describedby': 'screensaver-cover-hint' },
-        })}`}
-`;
-}
 
-function renderDeviceDisplay(container, options = {}) {
-  container.replaceChildren();
-  container.insertAdjacentHTML('beforeend', `
-    <section class="settings-section">
-      <h2 class="settings-section__title">${t('settings.sectionDeviceDisplay')}</h2>
-      <div class="row-carrier settings-group">${deviceDisplayRowsHtml(options)}</div>
-      ${/* WAND AN ZWEI ORTEN, GEGENSEITIG VERWIESEN (R22, D13): der Modus
-           dieses Geraets hier, das eigene Konto eines Wandtabletts unter
-           "Wandtabletts" - das darf nur ein Admin anlegen. */ ''}
-      ${options.isAdmin ? `<p class="form-hint settings-group__footer" id="wall-displays">
-        ${esc(t('settings.wallDisplaysLinkHint'))}
-        <a href="/settings/admin/displays" id="wall-displays-link">${esc(t('settings.pageDisplays'))}</a>
-      </p>` : ''}
-    </section>`);
-  bindDeviceDisplay(container);
-  window.lucide?.createIcons({ el: container });
-}
 
 /** Wand-Modus und Bildschirmschoner verdrahten (Blatt "Dieses Geraet"). */
-function bindDeviceDisplay(container) {
-  // Gerätelokal wie das Theme: kein Server-Request, keine Preference.
-  // Wirksam wird er auf der Dashboard-Route - der Toast sagt das, statt den
-  // Nutzer wortlos aus den Einstellungen zu werfen.
-  const wallToggle = container.querySelector('#wall-mode-toggle');
-  wallToggle?.addEventListener('change', () => {
-    setWallModeEnabled(wallToggle.checked);
-    window.yuvomi?.showToast(
-      wallToggle.checked
-        ? t('settings.wallModeOn', { page: t('nav.dashboard') })
-        : t('settings.wallModeOff'),
-      'success',
-    );
-  });
-
-  // Der Weg zu Immich bleibt in der App (wie die Links der Settings-Shell):
-  // navigate() fragt den Verlassen-Schutz, ein harter Seitenwechsel nicht.
-  container.querySelector('#screensaver-connect')?.addEventListener('click', (event) => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !window.yuvomi?.navigate) return;
-    event.preventDefault();
-    window.yuvomi.navigate('/settings/admin/integrations');
-  });
-
-  bindScreensaverIdleSelect(container.querySelector('#screensaver-idle-select'));
-  bindScreensaverSwitch(container.querySelector('#screensaver-clock-toggle'), setScreensaverClockOn);
-  bindScreensaverSwitch(container.querySelector('#screensaver-cover-toggle'), setScreensaverCoverOn);
-
-}
 
 function bindEvents(container, user) {
   // Geteilte gleitende Kapsel (Re-Critique 2026-09-27, D8).
@@ -1098,14 +963,6 @@ function bindEvents(container, user) {
 }
 
 export async function render(container, { user }) {
-  if (container.dataset?.part === 'device') {
-    // `screensaver_enabled` (GET /preferences): ist Immich verbunden? Scheitert
-    // die Frage, bleiben die Optionen stehen - lieber einstellbar als versteckt.
-    let screensaverOn = true;
-    try { screensaverOn = (await getPreferences()).screensaver_enabled !== false; } catch { /* s. o. */ }
-    renderDeviceDisplay(container, { screensaverOn, isAdmin: user?.role === 'admin' });
-    return;
-  }
   try {
     const loaded = await getPreferences();
     const preferences = {

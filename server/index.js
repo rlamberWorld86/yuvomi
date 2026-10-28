@@ -28,22 +28,13 @@ import * as appleCalendar from './services/apple-calendar.js';
 import * as icsSubscription from './services/ics-subscription.js';
 import * as icsExport from './services/ics-export.js';
 import { findCalendarByFeedToken } from './services/local-calendars.js';
-import * as inventoryDeadlinesIcs from './services/inventory-deadlines-ics.js';
-import * as cycleIcs from './services/cycle-ics.js';
-import * as scheduleIcs from './services/schedule-ics.js';
-import * as wasteIcs from './services/waste-ics.js';
 import * as caldavReminders from './services/caldav-reminders-sync.js';
 import * as caldavSync from './services/caldav-sync.js';
 import * as outlookCalendar from './services/outlook-calendar.js';
 import * as carddavSync from './services/cardav-sync.js';
 import * as holidays from './services/holidays.js';
-import { startScheduler as startBackupScheduler } from './services/backup-scheduler.js';
-import { startScheduler as startSplitExpenseScheduler } from './services/split-expenses-scheduler.js';
-import { startRewardMoneyScheduler } from './services/reward-money-scheduler.js';
 import { startScheduler as startPushScheduler } from './services/push-scheduler.js';
-import { startScheduler as startMedicationScheduler } from './services/medication-scheduler.js';
 import { startScheduler as startRecipeProviderScheduler } from './services/recipe-provider-sync.js';
-import { startWasteSourceScheduler } from './services/waste-source-scheduler.js';
 import { emailService } from './services/email.js';
 import { passwordLoginWarning, OIDC_PASSWORD_SENTINEL } from './services/oidc.js';
 import dashboardRouter from './routes/dashboard.js';
@@ -52,7 +43,6 @@ import shoppingRouter from './routes/shopping.js';
 import mealsRouter from './routes/meals.js';
 import recipesRouter from './routes/recipes.js';
 import pantryRouter from './routes/pantry.js';
-import inventoryRouter from './routes/inventory/index.js';
 import kitchenRouter from './routes/kitchen.js';
 import calendarRouter from './routes/calendar.js';
 import notesRouter from './routes/notes.js';
@@ -61,17 +51,11 @@ import contactsRouter from './routes/contacts.js';
 import cardavRouter from './routes/cardav.js';
 import birthdaysRouter from './routes/birthdays.js';
 import * as birthdayIcs from './services/birthday-ics.js';
-import budgetRouter from './routes/budget.js';
-import subscriptionsRouter from './routes/subscriptions.js';
 import documentsRouter from './routes/documents.js';
 import googleDriveStorageRouter from './routes/document-storage-google-drive.js';
 import { checkLocalStorageMount } from './services/document-storage.js';
-import dmsRouter from './routes/dms.js';
 import recipeProvidersRouter from './routes/recipe-providers.js';
-import splitExpensesRouter from './routes/split-expenses.js';
-import weatherRouter from './routes/weather.js';
 import preferencesRouter from './routes/preferences.js';
-import screensaverRouter from './routes/screensaver.js';
 import remindersRouter from './routes/reminders.js';
 import searchRouter from './routes/search.js';
 import familyRouter from './routes/family.js';
@@ -84,29 +68,14 @@ import { isPersonAvatarRead, inlineAvatarUrls } from './services/person-avatar.j
 // der Guard fuer /displays keine einzige Route und meldete die Spec als
 // Beschreibung von etwas, das es nicht gibt. Zwei Zeilen kosten nichts und
 // halten den Guard sehend.
-import displaysRouter from './routes/displays.js';
-import { pairingRouter } from './routes/displays.js';
-import { peopleRouter } from './routes/displays.js';
 import { displayMayAct } from './display-scopes.js';
 import { DISPLAY_PASSWORD_SENTINEL } from './services/display-accounts.js';
-import backupRouter from './routes/backup.js';
-import housekeepingRouter from './routes/housekeeping.js';
-import wasteRouter from './routes/waste/index.js';
 import modulesRouter from './routes/modules.js';
-import { listModules } from './services/modules.js';
-import { recoverInterruptedInstalls } from './services/module-install.js';
 import pushRouter from './routes/push.js';
-import emailRouter from './routes/email.js';
 import notificationsRouter from './routes/notifications.js';
-import healthRouter from './routes/health.js';
-import rewardsRouter from './routes/rewards.js';
 import permissionsRouter from './routes/permissions.js';
 import changelogRouter from './routes/changelog.js';
 import mcpRouter from './mcp/server.js';
-import scheduleRouter from './routes/schedule.js';
-import scheduleFeedRouter from './routes/schedule-feed.js';
-import schedulePreferencesRouter from './routes/schedule-preferences.js';
-import scheduleExtrasRouter from './routes/schedule-extras.js';
 import { sessionModuleAccessRequirement, tokenAccessRequirement, tokenAllows } from './scopes.js';
 import { moduleAccessVerdict, MODULE_ACCESS_DENIED, MODULE_ACCESS_READ_ONLY } from './permissions.js';
 import { BODY_LIMIT, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from './utils/upload-limit.js';
@@ -133,7 +102,7 @@ const getServiceWorkerResponse = createServiceWorkerResponseLoader(
 // Das prüft die Build-Revision schon beim Start und liefert in der Entwicklung
 // nach einer sw.js-Änderung dennoch die neue Quelle ohne manuellen Neustart.
 getServiceWorkerResponse();
-const DEFAULT_APP_NAME = 'Yuvomi';
+const DEFAULT_APP_NAME = 'Lamber Cockpit';
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -552,22 +521,7 @@ app.get('/feed/birthdays/:token.ics', feedLimiter, (req, res) => {
 
 // Eigenständiger Feed für Inventar-Garantiefristen (Stufe 4) - getrennt vom
 // Haushaltskalender-Feed oben, siehe server/services/inventory-deadlines-ics.js.
-app.get('/feed/inventory-deadlines/:token.ics', feedLimiter, (req, res) => {
-  try {
-    // Auflösen statt nur prüfen, wie beim Kalender-Feed oben: das Token gehört
-    // einem Nutzer, damit es einzeln zurückziehbar ist. In den Feed-Inhalt geht
-    // die Id nicht ein - Inventar ist Haushaltseigentum ohne Sichtbarkeitsachse.
-    const userId = inventoryDeadlinesIcs.findUserIdByFeedToken(db.get(), req.params.token);
-    if (!userId) return res.status(404).type('text/plain').send('Not found');
-    const ics = inventoryDeadlinesIcs.buildInventoryDeadlinesFeed(db.get());
-    res.set('Cache-Control', 'private, no-store');
-    res.set('Content-Disposition', 'inline; filename="yuvomi-inventory-deadlines.ics"');
-    res.type('text/calendar; charset=utf-8').send(ics);
-  } catch (err) {
-    log.error('', err);
-    res.status(500).type('text/plain').send('Internal error');
-  }
-});
+
 
 // Vorhergesagter Zyklus-Feed (Phase 5, Health) - anders als der Inventar-Feed
 // oben ist der INHALT hier schon personengebunden (cycle_periods.user_id),
@@ -582,55 +536,19 @@ app.get('/feed/inventory-deadlines/:token.ics', feedLimiter, (req, res) => {
 // Antwort - ein bestehendes Abo (Kalender-App auf einem anderen Gerät) soll
 // nicht stillschweigend leerlaufen, nur weil die Ansicht in der App gerade
 // gesperrt ist; Abschalten bleibt "Feed deaktivieren" in den Einstellungen.
-app.get('/feed/cycle/:token.ics', feedLimiter, (req, res) => {
-  try {
-    const userId = cycleIcs.findUserIdByFeedToken(db.get(), req.params.token);
-    if (!userId) return res.status(404).type('text/plain').send('Not found');
-    const ics = cycleIcs.buildCycleFeed(db.get(), userId);
-    res.set('Cache-Control', 'private, no-store');
-    res.set('Content-Disposition', 'inline; filename="yuvomi-cycle.ics"');
-    res.type('text/calendar; charset=utf-8').send(ics);
-  } catch (err) {
-    log.error('', err);
-    res.status(500).type('text/plain').send('Internal error');
-  }
-});
+
 
 // Eigenständiger Feed für den persönlichen Schichtplan (Schedule v3) - anders
 // als beim Inventar-Feed steckt hier die Nutzer-Id auch im Inhalt: gefeedet
 // werden NUR die eigenen aufgelösten Einträge dieses Tokens, siehe
 // server/services/schedule-ics.js.
-app.get('/feed/schedule/:token.ics', feedLimiter, (req, res) => {
-  try {
-    const userId = scheduleIcs.findUserIdByFeedToken(db.get(), req.params.token);
-    if (!userId) return res.status(404).type('text/plain').send('Not found');
-    const ics = scheduleIcs.buildScheduleFeed(db.get(), userId);
-    res.set('Cache-Control', 'private, no-store');
-    res.set('Content-Disposition', 'inline; filename="yuvomi-schedule.ics"');
-    res.type('text/calendar; charset=utf-8').send(ics);
-  } catch (err) {
-    log.error('', err);
-    res.status(500).type('text/plain').send('Internal error');
-  }
-});
+
 
 // Eigenständiger Feed für Abfuhrtermine (Waste, Stufe 10) - anders als beim
 // Schichtplan-Feed oben steckt hier keine Nutzer-Id im INHALT (Abfuhrtermine
 // sind Haushaltseigentum ohne Sichtbarkeitsachse, wie beim Inventar-Feed);
 // nur das optionale Typ-Filter je Nutzer, siehe server/services/waste-ics.js.
-app.get('/feed/waste/:token.ics', feedLimiter, (req, res) => {
-  try {
-    const userId = wasteIcs.findUserIdByFeedToken(db.get(), req.params.token);
-    if (!userId) return res.status(404).type('text/plain').send('Not found');
-    const ics = wasteIcs.buildWasteFeed(db.get(), userId);
-    res.set('Cache-Control', 'private, no-store');
-    res.set('Content-Disposition', 'inline; filename="yuvomi-waste.ics"');
-    res.type('text/calendar; charset=utf-8').send(ics);
-  } catch (err) {
-    log.error('', err);
-    res.status(500).type('text/plain').send('Internal error');
-  }
-});
+
 
 // MCP-Endpoint (Streamable HTTP, stateless): Auth über bestehende Bearer-API-Tokens.
 // Eigener Namespace außerhalb von /api/v1 → kein CSRF, kein Guest-Guard.
@@ -642,7 +560,6 @@ app.use('/mcp', apiLimiter, requireAuth, trackAdmittedWrite, mcpRouter);
 // es hat einen Code, den ein Mensch ihm eingetippt hat. Der Router traegt genau
 // eine Route; alles andere unter /displays faellt durch und landet weiter unten
 // im Administrator-Router hinter requireAuth.
-app.use('/api/v1/displays', pairingRouter);
 app.use('/api/v1', requireAuth);
 // Ab hier steht die Identitaet fest: schreibende Anfragen wartet ein Restore ab (#1431).
 app.use('/api/v1', trackAdmittedWrite);
@@ -795,7 +712,6 @@ app.use('/api/v1/meals', mealsRouter);
 app.use('/api/v1/recipes', recipesRouter);
 app.use('/api/v1/recipe-providers', recipeProvidersRouter);
 app.use('/api/v1/pantry', pantryRouter);
-app.use('/api/v1/inventory', inventoryRouter);
 // Kreislauf-Zustand der vier Küchen-Tabs in einer Abfrage (utils/kitchen-tabs.js).
 app.use('/api/v1/kitchen', kitchenRouter);
 app.use('/api/v1/calendar', calendarRouter);
@@ -804,15 +720,9 @@ app.use('/api/v1/quick-links', quickLinksRouter);
 app.use('/api/v1/contacts/cardav', cardavRouter);
 app.use('/api/v1/contacts', contactsRouter);
 app.use('/api/v1/birthdays', birthdaysRouter);
-app.use('/api/v1/budget/subscriptions', subscriptionsRouter);
-app.use('/api/v1/budget', budgetRouter);
 app.use('/api/v1/documents/storage/google-drive', googleDriveStorageRouter);
-app.use('/api/v1/documents/dms', dmsRouter);
 app.use('/api/v1/documents', documentsRouter);
-app.use('/api/v1/split-expenses', splitExpensesRouter);
-app.use('/api/v1/weather', weatherRouter);
 app.use('/api/v1/preferences', preferencesRouter);
-app.use('/api/v1/screensaver', screensaverRouter);
 app.use('/api/v1/reminders', remindersRouter);
 app.use('/api/v1/search', searchRouter);
 app.use('/api/v1/family', familyRouter);
@@ -822,26 +732,14 @@ app.use('/api/v1/people', personAvatarsRouter);
 // Display ist ein Mitglied ohne Adminrecht. Express nimmt den ersten Router, der
 // die Route kennt - `/people` gibt es nur hier, alles andere unter `/displays`
 // faellt durch in den Administrator-Router dahinter.
-app.use('/api/v1/displays', peopleRouter);
-app.use('/api/v1/displays', displaysRouter);
-app.use('/api/v1/backup', backupRouter);
-app.use('/api/v1/housekeeping', housekeepingRouter);
-app.use('/api/v1/waste', wasteRouter);
 app.use('/api/v1/modules', modulesRouter);
 app.use('/api/v1/push', pushRouter);
-app.use('/api/v1/email', emailRouter);
 app.use('/api/v1/notifications', notificationsRouter);
-app.use('/api/v1/health', healthRouter);
-app.use('/api/v1/rewards', rewardsRouter);
 // The specific /schedule/* prefixes must mount before the general /schedule
 // router: schedule.js has no first-segment param route today, so a request
 // like /schedule/feed still falls through to the right router either way -
 // but that only holds by accident, and breaks silently (no error, just a 404)
 // the day someone adds a router.get('/:id') to schedule.js.
-app.use('/api/v1/schedule/feed', scheduleFeedRouter);
-app.use('/api/v1/schedule/preferences', schedulePreferencesRouter);
-app.use('/api/v1/schedule/extras', scheduleExtrasRouter);
-app.use('/api/v1/schedule', scheduleRouter);
 app.use('/api/v1/permissions', permissionsRouter);
 
 // --------------------------------------------------------
@@ -939,12 +837,6 @@ async function runSync() {
 // Davor: ein Ersetzen, das ein Neustart zwischen seinen zwei Umbenennungen
 // abgeschnitten hat, holt die alte Fassung aus `.backup-<id>-*` zurueck, damit
 // schon die erste Liste das Modul wieder kennt. Wirft nie.
-await recoverInterruptedInstalls();
-try {
-  await listModules({ admin: true });
-} catch (err) {
-  log.warn('Initial module registry scan failed:', err.message);
-}
 
 const server = app.listen(PORT, BIND_ADDRESS, () => {
   // Der gebundene Port statt der Wunschangabe: mit PORT=0 vergibt der Kernel
@@ -995,13 +887,8 @@ const server = app.listen(PORT, BIND_ADDRESS, () => {
     .catch((err) => log.error('Document storage check failed:', err.message));
 
   // Backup-Scheduler starten
-  startBackupScheduler();
-  startSplitExpenseScheduler();
-  startRewardMoneyScheduler();
   startPushScheduler();
-  startMedicationScheduler();
   startRecipeProviderScheduler();
-  startWasteSourceScheduler();
 });
 
 export default app;

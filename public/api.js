@@ -519,11 +519,6 @@ const auth = {
 // E-Mail (SMTP) – Admin-Konfiguration
 // --------------------------------------------------------
 
-const email = {
-  getConfig: () => api.get('/email/config'),
-  saveConfig: (cfg) => api.put('/email/config', cfg),
-  test: (to) => api.post('/email/test', to ? { to } : {}),
-};
 
 const notifications = {
   providers: () => api.get('/notifications/providers'),
@@ -548,4 +543,4 @@ const recipeProviders = {
   getStatus: () => api.get('/recipe-providers/status'),
 };
 
-export { api, auth, email, notifications, recipeProviders, ApiError, isAbortError };
+export { api, auth, notifications, recipeProviders, ApiError, isAbortError };

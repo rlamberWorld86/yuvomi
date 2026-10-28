@@ -20,7 +20,6 @@ import {
 } from '/settings/module-order.js';
 import { MODULE_ICON, moduleIconHTML } from '/nav-icons.js';
 import { moduleAccentVar } from '/utils/module-accent.js';
-import { moduleDisplayLabel } from '/utils/extension-i18n.js';
 import { emptyStateHTML } from '/utils/empty-state.js';
 import { rowMenuHtml } from '/utils/row-action.js';
 import { installPopoverMenus } from '/utils/popover-menu.js';
@@ -32,7 +31,7 @@ const navSortables = sortableSet();
 // Baut die geordnete Liste der Navigations-Rows: gesperrte, gewöhnliche, Kitchen
 // (als ein expandierbarer Eintrag) und Drittanbieter-Module — sortiert nach der
 // normalisierten Modul-Reihenfolge der Preferences.
-function buildRows(preferences, thirdPartyModules) {
+function buildRows(preferences) {
   const disabled = new Set(Array.isArray(preferences.disabled_modules) ? preferences.disabled_modules : []);
   // Zwei Mengen, zwei Fragen (#673): `disabled` = gibt es im Haushalt nicht,
   // `hidden` = will ich nicht in meiner Navigation sehen. Siehe parseHiddenModules
@@ -85,26 +84,6 @@ function buildRows(preferences, thirdPartyModules) {
     sortable: true,
   };
 
-  const thirdPartyRows = thirdPartyModules.map((module) => {
-    const menuHidden = module.menu?.show === false;
-    return {
-      type: 'third-party',
-      id: module.id,
-      orderId: `third-party-${module.id}`,
-      section: NAV_SECTION.customModules,
-      label: moduleDisplayLabel(module),
-      icon: module.menu?.icon || module.icon || 'box',
-      enabled: module.enabled && module.status === 'enabled',
-      status: menuHidden ? t('settings.modulesMenuDisabled') : thirdPartyStatusLabel(module),
-      error: module.error,
-      toggleDisabled: module.status === 'error',
-      hasError: module.status === 'error',
-      menuHidden,
-      sortable: !menuHidden,
-      accent: module.accent,
-      locked: false,
-    };
-  });
 
   // Kitchen an erster Definitionsposition einfügen (vor das erste Haushalts-Modul),
   // damit es konsistent mit der globalen Navigation erscheint.
@@ -117,7 +96,6 @@ function buildRows(preferences, thirdPartyModules) {
     ordered.push(row);
   }
   if (!kitchenInserted) ordered.push(kitchenRow);
-  ordered.push(...thirdPartyRows);
 
   // Die gespeicherte Reihenfolge gilt nur innerhalb der drei Navigationsgruppen.
   // Dashboard und Settings bleiben an ihren festen Positionen.
@@ -317,36 +295,11 @@ function kitchenRowHtml(row, position) {
   `;
 }
 
-function thirdPartyRowHtml(row, position) {
-  // Statuswort nur fuer die Abweichung, wie auf `modules-active` (Kanon
-  // 2026-09-26): ein laufendes Drittmodul braucht kein gruenes „Aktiviert".
-  const statusClass = row.hasError ? 'settings-module-status--error' : 'settings-module-status--disabled';
-  const showStatus = row.hasError || !row.enabled || row.status !== t('settings.thirdPartyModulesStatusEnabled');
-  const stateClass = row.enabled ? 'settings-module-row--enabled' : 'settings-module-row--disabled';
-  const errorClass = row.hasError ? ' settings-module-row--error' : '';
-  return `
-    <div class="settings-module-row settings-module-row--sortable ${stateClass}${errorClass}${row.sortable ? '' : ' settings-module-row--fixed'}" data-module-row-id="${esc(row.orderId)}"${row.sortable ? ` data-module-order-id="${esc(row.orderId)}" data-module-name="${esc(row.label)}"` : ''}>
-      <div class="settings-module-row__icon" style="--module-row-accent:${esc(row.accent) || DEFAULT_MODULE_ACCENT}">
-        ${moduleIconHTML(row.icon)}
-      </div>
-      <div class="settings-module-row__body">
-        <div class="settings-module-row__title">
-          <strong>${esc(row.label)}</strong>
-          <span class="settings-module-origin">${esc(t('settings.modulesExternalBadge'))}</span>
-          ${showStatus ? `<span class="settings-module-status ${statusClass}">${esc(row.status)}</span>` : ''}
-        </div>
-        ${row.error ? `<p class="form-error" role="alert">${esc(row.error)}</p>` : ''}
-      </div>
-      ${endZoneHtml(row, position)}
-    </div>
-  `;
-}
 
 function rowHtml(row, position = null) {
   if (row.type === 'kitchen') return kitchenRowHtml(row, position);
   // Drittanbieter-Zeilen erreichen Mitglieder nie: /modules?admin=1 wird für sie
   // gar nicht abgefragt, thirdPartyModules bleibt leer.
-  if (row.type === 'third-party') return thirdPartyRowHtml(row, position);
   return builtInRowHtml(row, position);
 }
 
@@ -949,9 +902,8 @@ function bindMobileNavigationEvents(container, user) {
 
 export async function render(container, { user }) {
   const isAdmin = user?.role === 'admin';
-  const [preferencesResult, modulesResult] = await Promise.allSettled([
+  const [preferencesResult] = await Promise.allSettled([
     getPreferences(),
-    isAdmin ? api.get('/modules?admin=1') : Promise.resolve({ data: [] }),
   ]);
 
   /* OHNE PRAEFERENZEN WIRD HIER NICHT GERENDERT (Codex-Review zu PR #790).
@@ -980,9 +932,8 @@ export async function render(container, { user }) {
   // `preferences` dauerhaft leer: disabled_modules war nie gesetzt, jeder
   // Re-Render nach einem Toggle hakte die Checkbox wieder an (#615).
   const preferences = preferencesResult.value;
-  const thirdPartyModules = modulesResult.status === 'fulfilled' ? (modulesResult.value?.data ?? []) : [];
 
-  const rows = buildRows(preferences, thirdPartyModules);
+  const rows = buildRows(preferences);
   /* Was in der gespeicherten Reihenfolge steht, hier aber keine Zeile hat.
    * Fuer ein Mitglied sind das seine Drittanbieter-Module: `/modules?admin=1`
    * beantwortet ihm der Server nicht, also kennt dieses Blatt sie nicht - und

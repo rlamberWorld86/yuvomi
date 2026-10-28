@@ -1,6 +1,6 @@
 /**
  * Module: Family Documents
- * Purpose: REST API for locally stored family documents with per-member visibility.
+ * Purpose: REST API for Google Drive documents with per-member visibility.
  * Dependencies: express, server/db.js
  */
 
@@ -30,23 +30,11 @@ import { getStatus as getGoogleDriveStatus } from '../services/google-drive-stor
 import { refuseWhileRestoring } from '../middleware/restore-gate.js';
 import {
   StorageError,
-  assertWebdavTargetAllowed,
   cleanupStagedUpload,
   deleteDocumentContent,
   getActiveUploadBackend,
-  getConfig as getStorageConfig,
-  getEffectiveTarget,
-  getLocalStorageConfig,
-  getSelectedUploadBackend,
-  getStatus as getStorageStatus,
-  isUploadBackendSelectionExplicit,
   readDocumentContent,
-  resolveConfig,
-  saveConfig as saveStorageConfig,
-  setSelectedUploadBackend,
   stageDocumentUpload,
-  testConnection as testStorageConnection,
-  verifyExistingWebdavDocument,
 } from '../services/document-storage.js';
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from '../utils/upload-limit.js';
 import { contentMatchesMime } from '../utils/file-signature.js';
@@ -374,42 +362,13 @@ function sendStorageError(res, error, fallbackMessage) {
 }
 
 function storageConfigStatus() {
-  const config = getStorageConfig();
-  const status = getStorageStatus();
-  const local = getLocalStorageConfig();
-  const selectedBackend = getSelectedUploadBackend();
-  const activeBackend = getActiveUploadBackend();
-  const webdavCount = db.get().prepare(`
-    SELECT COUNT(*) AS count
-    FROM family_documents
-    WHERE storage_backend = 'webdav'
-  `).get().count;
   const googleDrive = getGoogleDriveStatus();
-  const effectiveTarget = activeBackend === 'local_folder'
-    ? local.basePath
-    : activeBackend === 'webdav'
-      ? getEffectiveTarget(config)
-      : activeBackend === 'google_drive'
-        ? googleDrive.folder_name
-        : null;
   return {
-    enabled: status.enabled,
-    configured: status.configured,
-    selected_upload_backend: selectedBackend,
-    active_upload_backend: activeBackend,
-    effective_target: effectiveTarget,
-    local_enabled: local.enabled,
-    local_path: local.basePath,
-    webdav_document_count: webdavCount,
+    selected_upload_backend: 'google_drive',
+    active_upload_backend: 'google_drive',
+    effective_target: googleDrive.folder_name,
     google_drive_document_count: googleDrive.document_count,
     google_drive: googleDrive,
-    last_test: status.lastTest,
-    last_error: status.lastError,
-    url: status.url,
-    username: status.username,
-    base_path: status.basePath,
-    password_configured: status.passwordConfigured,
-    env_controlled: status.envControlled,
   };
 }
 
@@ -434,162 +393,14 @@ router.get('/storage/config', (req, res) => {
   }
 });
 
-router.put('/storage/config', async (req, res) => {
-  try {
-    if (!isAdminRequest(req)) {
-      return res.status(403).json({ error: 'Not authorized.', code: 403 });
-    }
-    if (
-      req.body.selected_upload_backend !== undefined
-      && !['local', 'webdav', 'google_drive'].includes(req.body.selected_upload_backend)
-    ) {
-      return res.status(400).json({
-        error: 'selected_upload_backend must be local, webdav, or google_drive.',
-        code: 400,
-      });
-    }
-    if (
-      req.body.confirm_existing_access !== undefined
-      && typeof req.body.confirm_existing_access !== 'boolean'
-    ) {
-      return res.status(400).json({
-        error: 'confirm_existing_access must be a boolean.',
-        code: 400,
-      });
-    }
-    if (
-      req.body.clear_password !== undefined
-      && typeof req.body.clear_password !== 'boolean'
-    ) {
-      return res.status(400).json({
-        error: 'clear_password must be a boolean.',
-        code: 400,
-      });
-    }
-
-    const existing = db.get().prepare(`
-      SELECT *
-      FROM family_documents
-      WHERE storage_backend = 'webdav'
-      ORDER BY id
-      LIMIT 1
-    `).get();
-    const current = getStorageConfig();
-    const proposed = resolveConfig(req.body);
-    const targetChanged = (
-      (!current.envControlled.url && Object.hasOwn(req.body, 'url'))
-      || (!current.envControlled.path
-        && (Object.hasOwn(req.body, 'path') || Object.hasOwn(req.body, 'basePath')))
-    );
-    if (targetChanged && proposed.url) {
-      await assertWebdavTargetAllowed(proposed);
-    }
-
-    if (existing) {
-      const deletingRequiredField = (
-        (!current.envControlled.url
-          && Object.hasOwn(req.body, 'url')
-          && String(req.body.url ?? '').trim() === '')
-        || (!current.envControlled.username
-          && Object.hasOwn(req.body, 'username')
-          && String(req.body.username ?? '').trim() === '')
-        || (!current.envControlled.password && req.body.clear_password === true)
-        || (!current.envControlled.path
-          && (Object.hasOwn(req.body, 'path') || Object.hasOwn(req.body, 'basePath'))
-          && String(req.body.path ?? req.body.basePath ?? '').trim() === '')
-      );
-      if (
-        deletingRequiredField
-        || !proposed.url
-        || !proposed.username
-        || !proposed.password
-        || !proposed.basePath
-      ) {
-        throw configProtected(
-          'Required WebDAV connection data cannot be removed while documents exist.'
-        );
-      }
-
-      const connectionChanged = (
-        getEffectiveTarget(proposed) !== getEffectiveTarget(current)
-        || proposed.username !== current.username
-        || proposed.password !== current.password
-      );
-      if (connectionChanged) {
-        if (req.body.confirm_existing_access !== true) {
-          throw configProtected(
-            'Changing WebDAV connection data requires explicit confirmation.'
-          );
-        }
-        try {
-          await verifyExistingWebdavDocument(existing, proposed);
-        } catch (error) {
-          if (error instanceof StorageError
-            && error.storageCode === 'DOCUMENT_STORAGE_CONFIG_PROTECTED') {
-            throw error;
-          }
-          throw configProtected(
-            'The proposed WebDAV configuration cannot read an existing document.',
-            { cause: error }
-          );
-        }
-      }
-    }
-
-    const selectorProvided = Object.hasOwn(req.body, 'selected_upload_backend');
-    const selectedBackend = selectorProvided
-      ? req.body.selected_upload_backend
-      : (isUploadBackendSelectionExplicit() ? getSelectedUploadBackend() : null);
-    if (selectedBackend === 'webdav' && (
-      !proposed.enabled
-      || !proposed.url
-      || !proposed.username
-      || !proposed.password
-      || !proposed.basePath
-    )) {
-      throw new StorageError(
-        'DOCUMENT_STORAGE_NOT_CONFIGURED',
-        'WebDAV must be enabled and fully configured while it is selected.'
-      );
-    }
-    if (selectedBackend === 'google_drive') {
-      const driveStatus = getGoogleDriveStatus();
-      if (!driveStatus.configured || !driveStatus.connected) {
-        throw new StorageError(
-          'DOCUMENT_STORAGE_NOT_CONFIGURED',
-          'Google Drive must be connected before it can be selected.'
-        );
-      }
-    }
-
-    saveStorageConfig(req.body);
-    if (selectorProvided) setSelectedUploadBackend(req.body.selected_upload_backend);
-    res.json({ data: storageConfigStatus() });
-  } catch (err) {
-    log.error('PUT /storage/config error:', err);
-    if (sendStorageError(res, err, err.message)) return;
-    res.status(500).json({ error: 'Internal server error.', code: 500 });
-  }
-});
-
-router.post('/storage/test', async (req, res) => {
-  try {
-    if (!isAdminRequest(req)) {
-      return res.status(403).json({ error: 'Not authorized.', code: 403 });
-    }
-    await assertWebdavTargetAllowed(resolveConfig(req.body));
-    const result = await testStorageConnection(req.body);
-    res.json({ data: result });
-  } catch (err) {
-    log.error('POST /storage/test error:', err);
-    if (sendStorageError(res, err, err.message)) return;
-    res.status(500).json({ error: 'Internal server error.', code: 500 });
-  }
+// Legacy configuration endpoints cannot enable another upload destination.
+router.put('/storage/config', (req, res) => {
+  if (!isAdminRequest(req)) return res.status(403).json({ error: 'Not authorized.', code: 403 });
+  return res.status(400).json({ error: 'Configure Google Drive through its connection settings.', code: 400 });
 });
 
 router.get('/meta/options', (req, res) => {
   try {
-    const dmsAccounts = db.get().prepare('SELECT id, name, provider FROM dms_accounts ORDER BY name COLLATE NOCASE').all();
     res.json({
       data: {
         categories: CATEGORIES,
@@ -597,12 +408,12 @@ router.get('/meta/options', (req, res) => {
         statuses: STATUSES,
         max_file_size: MAX_FILE_BYTES,
         allowed_mime_types: Array.from(ALLOWED_MIME),
-        storage_providers: ['local', 'external'],
+        storage_providers: ['external'],
         active_upload_backend: getActiveUploadBackend(),
         // Der Client blendet Deep-Links in die (admin-only) Dokument-Einstellungen
         // nur ein, wenn sie auch erreichbar sind — kein toter Link für Mitglieder.
         is_admin: isAdminRequest(req),
-        dms_accounts: isAdminRequest(req) ? dmsAccounts : [],
+        dms_accounts: [],
       },
     });
   } catch (err) {
@@ -1240,6 +1051,7 @@ router.get('/', (req, res) => {
     const rows = db.get().prepare(`
       ${documentSelect()}
       WHERE ${canSeeSql('d')}
+        AND d.storage_backend = 'google_drive'
         AND d.status = @status
         AND (@category IS NULL OR d.category = @category)
         ${folderClause}
@@ -1395,7 +1207,11 @@ router.put('/:id', (req, res) => {
       return deletionInProgress(res);
     }
     if (selectedFolderMissing(vFolderId.value)) return selectedFolderGone(res);
-    const allowedIds = (visibility || existing.visibility) === 'restricted' ? parseMemberIds(req.body.allowed_member_ids) : [];
+    const allowedIds = (visibility || existing.visibility) === 'restricted'
+      ? (req.body.allowed_member_ids === undefined
+        ? db.get().prepare('SELECT user_id FROM family_document_access WHERE document_id = ?').all(id).map(row => row.user_id)
+        : parseMemberIds(req.body.allowed_member_ids))
+      : [];
     // Neu freigeben laesst sich nur Haushaltsmitgliedern (#1207). Wer schon
     // freigegeben ist - auch Hauspersonal oder ein Gast -, bleibt speicherbar.
     // Geprueft vor dem UPDATE: eine abgelehnte Anfrage aendert nichts.

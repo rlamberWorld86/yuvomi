@@ -61,7 +61,7 @@ function reset() {
 function rows() { return database.prepare('SELECT * FROM family_documents ORDER BY storage_key').all(); }
 async function enable() { return drive.configureSync({ enabled:true,folder_id:'source' },7); }
 
-test('opt-in scopes and verified source-folder configuration', async () => {
+test('integrated scopes and verified source-folder configuration', async () => {
   reset();
   drive.getAuthUrl({});
   assert.deepEqual(authOptions.scope,['https://www.googleapis.com/auth/drive.file',readonly]);
@@ -75,9 +75,9 @@ test('opt-in scopes and verified source-folder configuration', async () => {
   assert.equal(status.sync.folder_name,'Verified source');
   process.env.GOOGLE_DRIVE_SYNC_ENABLED = 'false';
   drive.getAuthUrl({});
-  assert.deepEqual(authOptions.scope,['https://www.googleapis.com/auth/drive.file']);
+  assert.deepEqual(authOptions.scope,['https://www.googleapis.com/auth/drive.file',readonly]);
   assert.equal(drive.preservesRemoteFiles(),true);
-  assert.deepEqual(await drive.syncIfEnabled(),{ skipped:'disabled' });
+  assert.equal((await drive.syncIfEnabled()).imported,0);
 });
 
 test('paginated recursive imports are private, stable and refresh only remote metadata', async () => {
@@ -95,11 +95,11 @@ test('paginated recursive imports are private, stable and refresh only remote me
   assert.equal(rows()[0].created_by,7);
   const sheet = rows().find(r => r.storage_key === 'sheet');
   assert.equal(sheet.original_name,'Budget.pdf');
-  database.prepare("UPDATE family_documents SET description='local',category='finance',visibility='restricted',status='archived',expires_at='2030-01-01' WHERE storage_key='file'").run();
+  database.prepare("UPDATE family_documents SET name='Custom title',description='local',category='finance',visibility='restricted',status='archived',expires_at='2030-01-01' WHERE storage_key='file'").run();
   const before = rows().find(r => r.storage_key === 'file');
   await drive.syncNow();
   const after = rows().find(r => r.storage_key === 'file');
-  for (const field of ['id','description','category','visibility','status','expires_at']) assert.equal(after[field],before[field]);
+  for (const field of ['id','name','description','category','visibility','status','expires_at']) assert.equal(after[field],before[field]);
   assert.equal(rows().length,2);
 });
 
@@ -176,14 +176,14 @@ test('uploads target the verified source and local deletion never removes remote
   assert.deepEqual(created.requestBody.parents,['source']);
   assert.equal(created.requestBody.name,'after-toggle.txt');
   assert.equal(drive.getStatus().folder_name,'Source');
-  assert.equal(drive.getStatus().sync.enabled,false);
+  assert.equal(drive.getStatus().sync.enabled,true);
   const document = { storage_backend:'google_drive',storage_key:'uploaded' };
   await documentStorage.deleteDocumentContent(document);
   assert.deepEqual(deleted,[]);
   assert.ok(database.prepare('SELECT 1 FROM google_drive_sync_tombstones WHERE file_id = ?').get('uploaded'));
-  // Compensation may remove only a new, uncommitted staged upload.
+  // Failed local persistence never deletes the uploaded remote file.
   await documentStorage.cleanupStagedUpload({ storage_backend:'google_drive',storage_key:'staged-only' });
-  assert.deepEqual(deleted,['staged-only']);
+  assert.deepEqual(deleted,[]);
   await assert.rejects(documentStorage.readDocumentContent({ ...document,external_meta:JSON.stringify({ drive_sync:{ available:false } }) }), /no longer available/);
 });
 
@@ -288,7 +288,7 @@ test('reconnect skips unavailable representatives and verifies source when all a
 test('callback revalidates document/account binding after its final external await', async () => {
   reset(); await enable();
   const entered = deferred(), release = deferred();
-  getFile = async id => { if (id === 'app') { entered.resolve(); await release.promise; } return { id,mimeType:folderType }; };
+  getFile = async id => { if (id === 'source') { entered.resolve(); await release.promise; } return { id,mimeType:folderType }; };
   const reconnecting = drive.handleCallback('code',7); await entered.promise;
   database.prepare("INSERT INTO family_documents (name,storage_backend,storage_key) VALUES ('new','google_drive','new')").run();
   release.resolve();
@@ -339,3 +339,62 @@ test('manual sync, configuration and OAuth callback release their own tracked HT
 });
 
 test.after(() => { drive.__setGoogleApiFactoryForTests(null); database.close(); original.close(); });
+
+ test('new uploads always use Drive and never fall back to configured local storage', async () => {
+  reset();
+  process.env.DOCUMENT_STORAGE_LOCAL_PATH = '/tmp/must-not-be-written';
+  database.prepare('INSERT OR REPLACE INTO sync_config (key,value) VALUES (?,?)').run('document_storage_selected_backend','local');
+  assert.equal(documentStorage.getSelectedUploadBackend(),'google_drive');
+  assert.equal(documentStorage.getActiveUploadBackend(),'google_drive');
+  assert.throws(() => documentStorage.setSelectedUploadBackend('local'), /only document upload/);
+  await assert.rejects(documentStorage.stageDocumentUpload({ buffer:Buffer.from('data'),originalName:'x.txt' }), /source folder/);
+  assert.equal(created,null);
+  await enable();
+  const staged = await documentStorage.stageDocumentUpload({ buffer:Buffer.from('data'),originalName:'x.txt' });
+  assert.equal(staged.storage_backend,'google_drive');
+  assert.equal(staged.content_data,'');
+  assert.deepEqual(created.requestBody.parents,['source']);
+  delete process.env.DOCUMENT_STORAGE_LOCAL_PATH;
+ });
+
+ test('connection verification and direct deletion never mutate Drive files', async () => {
+  reset(); await enable();
+  assert.deepEqual(await drive.testConnection(),{ok:true});
+  await drive.deleteFile('existing');
+  assert.equal(created,null);
+  assert.deepEqual(deleted,[]);
+ });
+
+
+test('document listing contains only authorized Drive rows and metadata edits retain ACLs', async () => {
+  const { default: documentsRouter } = await import('../server/routes/documents.js');
+  db._setTestDatabase(original);
+  let server;
+  try {
+    original.exec('DELETE FROM family_documents');
+    const addUser = original.prepare("INSERT INTO users (username,display_name,password_hash,role) VALUES (?,?,'unused','member')");
+    const owner = Number(addUser.run('drive-owner','Owner').lastInsertRowid);
+    const other = Number(addUser.run('drive-other','Other').lastInsertRowid);
+    const insert = original.prepare("INSERT INTO family_documents (name,original_name,mime_type,file_size,content_data,storage_backend,storage_provider,storage_key,created_by,visibility) VALUES (?,?,'text/plain',4,?,?,'external',?,?,?)");
+    const visible = Number(insert.run('Restricted','restricted.txt','','google_drive','visible',owner,'restricted').lastInsertRowid);
+    insert.run('Private','private.txt','','google_drive','private',other,'private');
+    const legacy = Number(original.prepare("INSERT INTO family_documents (name,original_name,mime_type,file_size,content_data,storage_backend,storage_provider,created_by,visibility) VALUES ('Legacy','legacy.txt','text/plain',4,?,'local','local',?,'family')").run(Buffer.from('safe'),owner).lastInsertRowid);
+    original.prepare('INSERT INTO family_document_access (document_id,user_id) VALUES (?,?)').run(visible,other);
+    const app = express(); app.use(express.json());
+    app.use((req,_res,next) => { req.authRole='member'; req.authUserId=owner; req.session={userId:owner}; next(); });
+    app.use('/',documentsRouter);
+    server = http.createServer(app);
+    await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
+    const base = 'http://127.0.0.1:' + server.address().port;
+    const listed = await fetch(base+'/');
+    assert.equal(listed.status,200);
+    assert.deepEqual((await listed.json()).data.map(row=>row.id),[visible]);
+    const update = await fetch(base+'/'+visible,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Edited title'})});
+    assert.equal(update.status,200);
+    assert.deepEqual((await update.json()).data.allowed_member_ids,[other]);
+    assert.deepEqual(original.prepare('SELECT content_data FROM family_documents WHERE id=?').get(legacy).content_data,Buffer.from('safe'));
+  } finally {
+    if(server) await new Promise(resolve=>server.close(resolve));
+    db._setTestDatabase(database);
+  }
+});

@@ -17,7 +17,6 @@ export const NOTIFICATION_PROVIDERS = [
   { id: 'gotify', name: 'Gotify' },
   { id: 'ntfy', name: 'ntfy' },
   { id: 'webhook', name: 'Webhook' },
-  { id: 'email', name: 'Email' },
 ];
 
 const PROVIDER_IDS = new Set(NOTIFICATION_PROVIDERS.map((p) => p.id));

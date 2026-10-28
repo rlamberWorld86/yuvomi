@@ -11,24 +11,18 @@ import { createNotificationChannelStore } from './notification-channels.js';
 import { gotifyProvider } from './notification-providers/gotify.js';
 import { ntfyProvider } from './notification-providers/ntfy.js';
 import { webhookProvider } from './notification-providers/webhook.js';
-import { emailProvider } from './notification-providers/email.js';
 import { guardedFetch } from './notification-providers/guarded-fetch.js';
 import { syncAllBirthdayReminders } from './birthdays.js';
 import { resolveHouseholdFormats, formatDateKey, translate } from '../utils/i18n.js';
 import { moveNoticeFields } from './shopping-move-notices.js';
 import { warrantyEndDate } from './inventory-deadlines.js';
 import { syncAllPantryExpiryReminders } from './pantry-reminders.js';
-import { syncAllCycleReminders } from './cycle-reminders.js';
-import { syncAllScheduleReminders } from './schedule-reminders.js';
-import { syncAllWasteReminders } from './waste-reminders.js';
 import { withoutModulesDeniedToRecipient, withoutSwitchedOffModules } from './reminder-origins.js';
 import { reminderTargetPublicSql, reminderTargetVisibleSql } from './reminder-targets.js';
-import { syncAllPreventionReminders } from './prevention-reminders.js';
-import { syncAllFastingReminders } from './fasting-reminders.js';
 import { remindAtCompareKey, remindAtUtcSql } from '../utils/reminder-schedule.js';
 
 const log = createLogger('Notifications');
-const APP_NAME = 'Yuvomi';
+const APP_NAME = 'Lamber Cockpit';
 // Greift nur, wenn die verknuepfte Entitaet inzwischen geloescht wurde: nie den
 // App-Namen als Body wiederholen, sonst besteht die Notification nur aus "Yuvomi" (#581).
 const FALLBACK_BODY = 'Reminder';
@@ -43,7 +37,6 @@ export const defaultProviders = {
   gotify: gotifyProvider,
   ntfy: ntfyProvider,
   webhook: webhookProvider,
-  email: emailProvider,
 };
 
 function iso(value) {
@@ -456,7 +449,6 @@ export async function processDueNotifications({
   // reminders in the same household.
   let fastingSyncFailed = false;
   try {
-    syncAllFastingReminders(activeDb, now);
   } catch (err) {
     fastingSyncFailed = true;
     log.error('Fasting reminder sync failed:', err?.message || err);
@@ -477,13 +469,11 @@ export async function processDueNotifications({
   // Gleiche Stelle, gleiche Bauart: ein rollierendes Fenster je Nutzer statt
   // haushaltweit, weil der Zyklus (anders als der Vorrat) persoenlich ist.
   try {
-    syncAllCycleReminders(activeDb, now);
   } catch (err) {
     log.error('Cycle reminder sync failed:', err?.message || err);
   }
   // haushaltweit, weil der Schichtplan (anders als der Vorrat) persoenlich ist.
   try {
-    syncAllScheduleReminders(activeDb, now);
   } catch (err) {
     log.error('Schedule reminder sync failed:', err?.message || err);
   }
@@ -491,14 +481,12 @@ export async function processDueNotifications({
   // persoenliche Typ-Auswahl ist (waste_reminder_settings), nicht haushaltweit
   // wie der Vorrat.
   try {
-    syncAllWasteReminders(activeDb, now);
   } catch (err) {
     log.error('Waste reminder sync failed:', err?.message || err);
   }
   // Same spot, same shape: household-wide is wrong here too - the anchor is a
   // per-subject record, and the D6 caregiver fan-out is per-subject as well.
   try {
-    syncAllPreventionReminders(activeDb, now);
   } catch (err) {
     log.error('Prevention reminder sync failed:', err?.message || err);
   }

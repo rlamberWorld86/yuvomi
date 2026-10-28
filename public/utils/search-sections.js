@@ -51,16 +51,8 @@ export const SEARCH_SECTIONS = Object.freeze([
     route: (i) => `/shopping?list=${i.list_id}&highlight=${i.id}` },
   { bucket: 'recipes', labelKey: 'nav.recipes', module: 'recipes', route: (i) => `/recipes?open=${i.id}` },
   { bucket: 'pantry', labelKey: 'nav.pantry', module: 'pantry', route: () => '/pantry', meta: dateMeta('expires_on') },
-  { bucket: 'meds', labelKey: 'health.tabs.meds', module: 'health',
-    route: () => '/health/meds', meta: (i) => i.dosage_text || '' },
-  { bucket: 'activities', labelKey: 'health.tabs.activity', module: 'health',
-    route: () => '/health/activity', label: (i, fmt) => fmt.activityLabel(i), meta: dateMeta('performed_at') },
   { bucket: 'documents', labelKey: 'nav.documents', module: 'documents', route: () => '/documents' },
-  { bucket: 'inventory', labelKey: 'nav.inventory', module: 'inventory',
-    route: (i) => `/inventory?open=${i.id}`, meta: (i) => [i.brand, i.model].filter(Boolean).join(' ') },
   { bucket: 'birthdays', labelKey: 'nav.birthdays', module: 'birthdays', route: (i) => `/birthdays?open=${i.id}` },
-  { bucket: 'budget', labelKey: 'nav.budget', module: 'budget', route: () => '/budget?tab=budget', meta: dateMeta('date') },
-  { bucket: 'waste', labelKey: 'nav.waste', module: 'waste', route: (i) => `/waste?type=${i.id}` },
 ]);
 
 /**
@@ -113,10 +105,6 @@ export const NEW_ACTIONS = Object.freeze([
   { module: 'contacts', route: '/contacts', labelKey: 'newLabel.contacts' },
   { module: 'birthdays', route: '/birthdays', labelKey: 'newLabel.birthdays' },
   { module: 'documents', route: '/documents', labelKey: 'newLabel.documents' },
-  { module: 'inventory', route: '/inventory', labelKey: 'newLabel.inventory' },
-  { module: 'budget', route: '/budget', labelKey: 'newLabel.budget' },
-  { module: 'waste', route: '/waste', labelKey: 'newLabel.waste' },
-  { module: 'rewards', route: '/rewards', labelKey: 'newLabel.rewards' },
 ]);
 
 /**

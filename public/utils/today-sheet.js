@@ -71,11 +71,7 @@ const WASTE_PUT_OUT_SORT = '18:00';
 const REMINDER_SHEET_ORIGINS = {
   task:                   { module: 'tasks',     widget: 'tasks',    tone: 'task',      icon: MODULE_ICON.tasks,     route: '/tasks',     kind: 'task',  echo: 'tasks' },
   event:                  { module: 'calendar',  widget: 'calendar', tone: 'event',     icon: MODULE_ICON.calendar,  route: '/calendar',  kind: 'event', echo: 'calendar' },
-  subscription:           { module: 'budget',    widget: 'budget',   tone: 'budget',    icon: MODULE_ICON.budget,    route: '/budget' },
-  inventory_item:         { module: 'inventory',                     tone: 'inventory', icon: MODULE_ICON.inventory, route: '/inventory' },
-  inventory_tracked_date: { module: 'inventory',                     tone: 'inventory', icon: MODULE_ICON.inventory, route: '/inventory' },
   document_expiry:        { module: 'documents',                     tone: 'documents', icon: MODULE_ICON.documents, route: '/documents' },
-  health_prevention_due:  { module: 'health',    widget: 'health',   tone: 'health',    icon: MODULE_ICON.health,    route: '/health' },
 };
 
 function openDoseCount(health) {
@@ -93,114 +89,6 @@ function joinNames(names) {
  * dashboard.js selbst). Reihenfolge egal: das Blatt sortiert nach Tag.
  */
 export const TODAY_SHEET_SOURCES = [
-  {
-    // Offene Dosen - die EIGENEN Medikamente (die Antwort fuehrt nur die des
-    // Betrachters, #592). Genommene und ausgelassene zaehlen nicht als offen;
-    // sind alle erledigt, entfaellt die Zeile und die Quelle meldet „erledigt".
-    id: 'doses',
-    module: 'health',
-    widget: 'health',
-    settled: (data) => (Number(data?.health?.dosesTotal) || 0) > 0 && openDoseCount(data.health) === 0,
-    collect(data, ctx) {
-      const open = openDoseCount(data?.health);
-      if (!open) return [];
-      const next = data.health.nextDose ?? null;
-      const time = next?.time ? String(next.time).slice(0, 5) : null;
-      return [{
-        kind: 'dose',
-        objectId: null,
-        sortKey: time ?? SORT_TODAY,
-        timeLabel: time ? formatTime(time) : '',
-        overdue: Boolean(time && time < ctx.nowTime),
-        title: open === 1 && next?.name ? next.name : t('dashboard.todayDosesOpen', { count: open }),
-        sub: open === 1 || !next?.name ? t('dashboard.todayDose') : t('dashboard.todayNextUp', { event: next.name }),
-        icon: MODULE_ICON.health,
-        tone: 'health',
-        // Der Bereich, in dem eingenommen wird - nicht die Wurzel (R22, D3).
-        route: '/health/meds',
-        who: null,
-        priority: 10,
-        open: true,
-      }];
-    },
-  },
-  {
-    // Wartende Freigaben - entscheiden duerfen nur Admins (PATCH
-    // /rewards/redemptions/:id), also spricht die Zeile nur zu ihnen. Ein Kind
-    // sieht seine eigene Anfrage auf der Belohnungsseite, nicht als Auftrag.
-    // Wer freigibt, sagt die ANTWORT (`rewards.view`, dieselbe Pruefung wie
-    // das Modul): in der Sicht `self` zaehlt `pending` die eigenen Bitten des
-    // Kindes, und die waeren hier als „Freigabe" gelesen worden.
-    id: 'approvals',
-    module: 'rewards',
-    widget: 'rewards',
-    collect(data) {
-      if (data?.rewards?.view !== 'approver') return [];
-      const pending = (Number(data?.rewards?.pending) || 0) + (Number(data?.rewards?.moneyPending) || 0);
-      if (!pending) return [];
-      return [{
-        kind: 'approval',
-        objectId: null,
-        sortKey: SORT_TODAY,
-        timeLabel: '',
-        title: t('dashboard.rewardsPending', { count: pending }),
-        sub: t('nav.rewards'),
-        icon: MODULE_ICON.rewards,
-        tone: 'rewards',
-        route: '/rewards',
-        who: null,
-        priority: 20,
-        open: true,
-      }];
-    },
-  },
-  {
-    // Abfuhr: heute abgeholt (offen bis Mittag) und morgen abgeholt (heute
-    // Abend rausstellen, offen). Mehrere Tonnen eines Tages sind EINE Zeile -
-    // man geht einmal zur Strasse, nicht dreimal.
-    id: 'waste',
-    module: 'waste',
-    widget: 'waste',
-    collect(data, ctx) {
-      const pickups = Array.isArray(data?.wastePickups) ? data.wastePickups : [];
-      const rows = [];
-      const today = pickups.filter((p) => p.date_key === ctx.todayKey);
-      const tomorrow = pickups.filter((p) => p.date_key === ctx.tomorrowKey);
-      if (today.length) {
-        rows.push({
-          kind: 'waste',
-          objectId: null,
-          sortKey: SORT_ALL_DAY,
-          timeLabel: '',
-          title: joinNames(today.map((p) => p.type_name)),
-          sub: t('dashboard.todayWasteToday'),
-          icon: MODULE_ICON.waste,
-          tone: 'waste',
-          route: `/waste${today[0].deep_link ?? ''}`,
-          who: null,
-          priority: 15,
-          open: ctx.nowTime < WASTE_PICKUP_SETTLED,
-        });
-      }
-      if (tomorrow.length) {
-        rows.push({
-          kind: 'waste',
-          objectId: null,
-          sortKey: WASTE_PUT_OUT_SORT,
-          timeLabel: '',
-          title: joinNames(tomorrow.map((p) => p.type_name)),
-          sub: t('dashboard.todayWasteTonight'),
-          icon: MODULE_ICON.waste,
-          tone: 'waste',
-          route: `/waste${tomorrow[0].deep_link ?? ''}`,
-          who: null,
-          priority: 25,
-          open: true,
-        });
-      }
-      return rows;
-    },
-  },
   {
     // Geburtstag und Namenstag heute. Steht er schon als Termin in der Antwort
     // (die Geburtstage laufen im Kalender mit, #927), spricht der Kalender fuer
@@ -267,35 +155,6 @@ export const TODAY_SHEET_SOURCES = [
     },
   },
   {
-    // Die eigene Schicht. Kein Auftrag, sondern ein Rahmen des Tages - wie ein
-    // Termin haelt sie die Coda nicht auf.
-    id: 'shifts',
-    module: 'schedule',
-    widget: 'schedule',
-    collect(data, ctx) {
-      const shifts = Array.isArray(data?.myShiftsToday) ? data.myShiftsToday : [];
-      return shifts.map((entry) => {
-        const type = entry.shift_type ?? {};
-        const start = type.start_time ? String(type.start_time).slice(0, 5) : null;
-        const end = type.end_time ? String(type.end_time).slice(0, 5) : null;
-        return {
-          kind: 'shift',
-          objectId: type.id ?? null,
-          sortKey: start ?? SORT_ALL_DAY,
-          timeLabel: start && end ? `${formatTime(start)} - ${formatTime(end)}` : '',
-          title: shiftTypeLabel(type),
-          sub: t('nav.schedule'),
-          icon: MODULE_ICON.schedule,
-          tone: 'schedule',
-          route: '/schedule',
-          who: ctx.viewer ?? null,
-          priority: 50,
-          open: false,
-        };
-      });
-    },
-  },
-  {
     // Faellige Erinnerungen - die, um die man ausdruecklich gebeten hat. Eine
     // Erinnerung an eine Aufgabe, die ohnehin als Zeile im Blatt steht, ist
     // keine zweite Zeile wert.
@@ -330,41 +189,6 @@ export const TODAY_SHEET_SOURCES = [
         });
       }
       return rows;
-    },
-  },
-  {
-    // Die Haushaltshilfe ist gerade da. Eine Auskunft, kein Auftrag.
-    id: 'housekeeping',
-    module: 'housekeeping',
-    widget: 'housekeeping',
-    collect(data, ctx) {
-      const hk = data?.housekeeping;
-      if (!hk?.present) return [];
-      const since = hk.presentSince ? String(hk.presentSince) : '';
-      // Der Check-in ist ein Zeitpunkt (oft UTC, 'Z'): sein Platz im Tag ist die
-      // Wanduhr des Haushalts, dieselbe, die die Beschriftung rechts zeigt.
-      const sinceTime = since ? (zonedTimeKey(since) || null) : null;
-      // EIN BEGINN VOR HEUTE ist eine vergessene Abmeldung (#1452). Die Zeile
-      // sagte „seit 08:30" und stand zwischen den heutigen 08:00 und 09:00 -
-      // als waere die Hilfe heute frueh gekommen. Sie nennt jetzt das Datum,
-      // mit demselben Helfer wie die Kennzahl-Kachel, und steht oben bei den
-      // ganztaegigen Zeilen: ihr Platz im Tag ist nicht heute.
-      const sinceDay = since ? zonedDateKey(since) : '';
-      const earlier = Boolean(sinceDay && ctx?.todayKey && sinceDay < ctx.todayKey);
-      return [{
-        kind: 'housekeeping',
-        objectId: null,
-        sortKey: sinceTime && !earlier ? sinceTime : SORT_ALL_DAY,
-        timeLabel: sinceTime ? t('dashboard.housekeepingSince', { time: housekeepingSinceLabel(since) }) : '',
-        title: hk.workerName || t('dashboard.housekeepingPresent'),
-        sub: hk.workerName ? t('dashboard.housekeepingPresent') : t('nav.housekeeping'),
-        icon: MODULE_ICON.housekeeping,
-        tone: 'housekeeping',
-        route: '/housekeeping',
-        who: null,
-        priority: 70,
-        open: false,
-      }];
     },
   },
 ];
