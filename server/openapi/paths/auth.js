@@ -426,30 +426,6 @@ export function authPaths() {
         },
       }),
     },
-    '/api/v1/auth/onboarding-seen': {
-      post: op({
-        summary: 'Mark the onboarding walkthrough as seen',
-        tag: 'Auth',
-        stateChanging: true,
-        description: 'Records the current onboarding version on the calling account, so the '
-          + 'walkthrough does not reappear on another device or in a private window. Affects only '
-          + 'the calling account and takes no body.',
-      }),
-    },
-    '/api/v1/auth/changelog-seen': {
-      post: op({
-        summary: 'Mark the changelog as seen by the calling account',
-        tag: 'Auth',
-        stateChanging: true,
-        requestBody: jsonBody(null),
-        description: 'Records two marks on the calling account: the INSTALLED version, taken from '
-          + 'the server rather than the body because a client could claim the wrong one, and the '
-          + 'last known PUBLISHED version from the optional `{ latest }` body. They answer different '
-          + 'questions - what changed in this installation since the last look, and whether '
-          + 'something newer exists at all. An absent `latest` leaves the stored value alone rather '
-          + 'than clearing it. Affects only the calling account.',
-      }),
-    },
     '/api/v1/auth/me/password': {
       patch: op({
         summary: 'Change current user password',

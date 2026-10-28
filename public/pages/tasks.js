@@ -685,8 +685,8 @@ function renderTaskCard(task, opts = {}) {
              setzt refreshTaskHandleLabels(). */''}
         ${reorderable ? `
         <button type="button" class="row-action list-row__drag"
-                aria-label="${esc(t('shopping.reorderHandle', { name: task.title }))}"
-                title="${t('shopping.reorderHandleHint')}">
+                aria-label="${esc(t('common.reorderHandle', { name: task.title }))}"
+                title="${t('common.reorderHandleHint')}">
           <i data-lucide="grip-vertical" class="icon-md" aria-hidden="true"></i>
         </button>` : ''}
       </div>
@@ -4797,8 +4797,8 @@ function refreshTaskHandleLabels(rowsEl) {
   rows.forEach((row, idx) => {
     const handle = row.querySelector('.list-row__drag');
     const name = row.querySelector('.task-card__title')?.textContent?.trim() ?? '';
-    handle?.setAttribute('aria-label', `${t('shopping.reorderHandle', { name })}, ${
-      t('shopping.reorderPosition', { index: idx + 1, total: rows.length })}`);
+    handle?.setAttribute('aria-label', `${t('common.reorderHandle', { name })}, ${
+      t('common.reorderPosition', { index: idx + 1, total: rows.length })}`);
   });
 }
 

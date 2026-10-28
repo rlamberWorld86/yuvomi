@@ -47,10 +47,9 @@ export const SEARCH_SECTIONS = Object.freeze([
       : '') },
   { bucket: 'notes', labelKey: 'nav.notes', module: 'notes', route: (i) => `/notes?open=${i.id}` },
   { bucket: 'contacts', labelKey: 'nav.contacts', module: 'contacts', route: (i) => `/contacts?open=${i.id}` },
-  { bucket: 'items', labelKey: 'nav.shopping', module: 'shopping',
-    route: (i) => `/shopping?list=${i.list_id}&highlight=${i.id}` },
-  { bucket: 'recipes', labelKey: 'nav.recipes', module: 'recipes', route: (i) => `/recipes?open=${i.id}` },
-  { bucket: 'pantry', labelKey: 'nav.pantry', module: 'pantry', route: () => '/pantry', meta: dateMeta('expires_on') },
+
+
+
   { bucket: 'documents', labelKey: 'nav.documents', module: 'documents', route: () => '/documents' },
   { bucket: 'birthdays', labelKey: 'nav.birthdays', module: 'birthdays', route: (i) => `/birthdays?open=${i.id}` },
 ]);
@@ -98,10 +97,10 @@ export const NEW_ACTIONS = Object.freeze([
   { module: 'tasks', route: '/tasks', labelKey: 'newLabel.tasks' },
   { module: 'calendar', route: '/calendar', labelKey: 'newLabel.calendar' },
   { module: 'notes', route: '/notes', labelKey: 'newLabel.notes' },
-  { module: 'shopping', route: '/shopping', labelKey: 'newLabel.shopping' },
-  { module: 'meals', route: '/meals', labelKey: 'newLabel.meals' },
-  { module: 'recipes', route: '/recipes', labelKey: 'newLabel.recipes' },
-  { module: 'pantry', route: '/pantry', labelKey: 'newLabel.pantry' },
+
+
+
+
   { module: 'contacts', route: '/contacts', labelKey: 'newLabel.contacts' },
   { module: 'birthdays', route: '/birthdays', labelKey: 'newLabel.birthdays' },
   { module: 'documents', route: '/documents', labelKey: 'newLabel.documents' },

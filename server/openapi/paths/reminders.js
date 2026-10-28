@@ -47,13 +47,13 @@ export function remindersPaths() {
       get: op({ summary: 'List reminders', tag: 'Reminders' }),
       post: op({ summary: 'Create reminder', tag: 'Reminders', stateChanging: true, requestBody: jsonBody(null), description: '`pantry_item` is rejected with 400: the notification run rebuilds pantry reminders every pass, so a hand-set date would be gone within a minute. Reading and dismissing work as for any other reminder. Other derived types (subscription, inventory) stay settable - there the module only writes when its object changes.' + TARGET_VISIBLE + REMIND_AT_INPUT + EVENT_FANOUT }),
       put: op({ summary: 'Replace reminder set for an entity', tag: 'Reminders', stateChanging: true, requestBody: jsonBody(null), description: 'Replaces all reminders of an entity with the given `remind_ats` list (deduplicated, max 5). `pantry_item` is rejected with 400: the notification run rebuilds pantry reminders every pass, so a hand-set date would be gone within a minute. Reading and dismissing work as for any other reminder. Other derived types (subscription, inventory) stay settable - there the module only writes when its object changes. Entries are deduplicated after conversion, so the same instant in two notations is one reminder.' + TARGET_VISIBLE + REMIND_AT_INPUT + EVENT_FANOUT }),
-      delete: op({ summary: 'Delete reminders by filter', tag: 'Reminders', stateChanging: true, description: '`pantry_item` is rejected with 400 - the notification run recreates the row every pass. Dismiss it instead.' + EVENT_FANOUT }),
+      delete: op({ summary: 'Delete reminders by filter', tag: 'Reminders', stateChanging: true, description: 'Derived reminders cannot be deleted manually. Dismiss them instead.' + EVENT_FANOUT }),
     },
     '/api/v1/reminders/{id}/dismiss': {
       patch: op({ summary: 'Dismiss reminder', tag: 'Reminders', params: [idParam()], stateChanging: true }),
     },
     '/api/v1/reminders/{id}': {
-      delete: op({ summary: 'Delete reminder', tag: 'Reminders', params: [idParam()], stateChanging: true, description: '`pantry_item` is rejected with 400 - the notification run recreates the row every pass. Dismiss it instead.' + EVENT_FANOUT }),
+      delete: op({ summary: 'Delete reminder', tag: 'Reminders', params: [idParam()], stateChanging: true, description: 'Derived reminders cannot be deleted manually. Dismiss them instead.' + EVENT_FANOUT }),
     },
   };
 }

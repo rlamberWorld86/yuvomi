@@ -233,7 +233,7 @@ async function apiFetch(path, options = {}, _retried = false) {
  * einer Zahl auftaucht - nicht jeden Schreibpfad der App. Ein Praefix zu
  * vergessen kostet eine veraltete Zahl bis zum Ablauf der TTL; jeden
  * Einstellungsklick mitzuzaehlen kostet eine Aggregation pro Klick. */
-const COUNTED_PATHS = ['/tasks', '/shopping', '/rewards', '/health', '/birthdays', '/inventory'];
+const COUNTED_PATHS = ['/tasks', '/rewards', '/health', '/birthdays', '/inventory'];
 
 /** Name des Ereignisses, mit dem jeder geglueckte Schreibvorgang sich meldet.
  * Leser schreiben ihn aus (der Test-Loader stubt diese Datei - ein neuer
@@ -455,7 +455,6 @@ const auth = {
     await auth.me().catch(() => {});
     return res;
   },
-  markOnboardingSeen: () => api.post('/auth/onboarding-seen', {}),
   deleteUser: async (id) => {
     const res = await api.delete(`/auth/users/${id}`);
     await auth.me().catch(() => {});

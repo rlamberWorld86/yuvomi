@@ -1,4 +1,4 @@
-export const KITCHEN_CHILD_IDS = Object.freeze(['meals', 'recipes', 'shopping', 'pantry']);
+
 
 // Eingebaute Module in kanonischer Domaenen-Reihenfolge. Uebersicht und
 // Einstellungen sind gesperrt: nicht sortierbar, nicht abschaltbar, nicht
@@ -29,14 +29,7 @@ export const BUILT_IN_MODULES = Object.freeze([
   { id: 'settings', labelKey: 'nav.settings', locked: true },
 ]);
 
-export const KITCHEN_CHILD_LABEL_KEYS = Object.freeze({
-  meals: 'nav.meals',
-  recipes: 'nav.recipes',
-  shopping: 'nav.shopping',
-  pantry: 'nav.pantry',
-});
-
-export const DEFAULT_MOBILE_NAV_ORDER = Object.freeze(['calendar', 'tasks', 'kitchen']);
+export const DEFAULT_MOBILE_NAV_ORDER = Object.freeze(['calendar', 'tasks', 'notes']);
 export const NAV_SECTION = Object.freeze({
   overview: 0,
   plan: 1,
@@ -49,7 +42,7 @@ export const NAV_SECTION = Object.freeze({
 // Die Navigationsgruppen in Anzeigereihenfolge, samt ihren Beschriftungen.
 // Auch das lesen BEIDE Modul-Blaetter (Audit 2026-08-16): sie standen kurz
 // doppelt da, und eine neue Gruppe haette in zwei Dateien nachgetragen werden
-// muessen - dieselbe Drift, gegen die es fuer die Kuechen-Kinder schon einen
+
 // Guard gibt.
 export const NAV_SECTION_LABEL_KEYS = Object.freeze({
   [NAV_SECTION.overview]: 'nav.sectionOverview',
@@ -69,23 +62,13 @@ export const NAV_SECTIONS = Object.freeze([
   NAV_SECTION.customModules,
 ]);
 
-/**
- * Wie viele EINTRAEGE jede Sektion in einer Navigationsliste hat. Die vier
- * Kuechen-Kinder sind in der Leiste EIN Eintrag (die Kuechen-Gruppe), deshalb
- * zaehlen sie zusammen einmal.
- *
- * @param {Array<{section?: number, kitchenGroup?: boolean}>} items
- * @returns {Map<number, number>}
- */
+
 export function navSectionEntryCounts(items = []) {
   const counts = new Map();
-  let kitchenCounted = false;
+
   for (const item of Array.isArray(items) ? items : []) {
     if (item?.section == null) continue;
-    if (item.kitchenGroup) {
-      if (kitchenCounted) continue;
-      kitchenCounted = true;
-    }
+
     counts.set(item.section, (counts.get(item.section) ?? 0) + 1);
   }
   return counts;
@@ -121,7 +104,7 @@ export function navSectionLabelKey(section, entryCount) {
 // Akzent einer Drittanbieter-Zeile, wenn das Modul keinen eigenen mitbringt.
 export const DEFAULT_MODULE_ACCENT = 'var(--color-accent)';
 
-const KITCHEN_CHILD_ID_SET = new Set(KITCHEN_CHILD_IDS);
+
 // PLANEN = was die Familie vorhat und abarbeitet (R19, Ulas 2026-10-16):
 // Kalender, Aufgaben, Belohnungen, Notizen, Schichtplan. Die Belohnungen sind
 // die Gegenseite der Aufgaben (Punkte fuer Erledigtes) und standen unter
@@ -132,7 +115,7 @@ const KITCHEN_CHILD_ID_SET = new Set(KITCHEN_CHILD_IDS);
 const PLAN_MODULE_IDS = new Set(['calendar', 'tasks', 'rewards', 'notes', 'schedule']);
 // Ehemals ein einziger „Zuhause"-Sammeltopf (8 Module) — aufgeteilt in semantische
 // Gruppen ≤5, damit die Sidebar-Sektion eine Bedeutung trägt statt „nicht Plan/Übersicht".
-const HOUSEHOLD_MODULE_IDS = new Set(['kitchen', 'meals', 'recipes', 'shopping', 'housekeeping', 'waste', 'documents', 'inventory']);
+const HOUSEHOLD_MODULE_IDS = new Set(['housekeeping', 'waste', 'documents', 'inventory']);
 const PEOPLE_MODULE_IDS = new Set(['contacts', 'birthdays', 'health']);
 const FINANCE_MODULE_IDS = new Set(['budget']);
 const MOBILE_NAV_ID_RE = /^[a-z0-9][a-z0-9-]*$/;
@@ -149,16 +132,10 @@ function isMobileNavId(id) {
 export function normalizeModuleOrder(order = []) {
   const normalized = [];
   const seen = new Set();
-  let hasKitchen = false;
+
 
   for (const id of Array.isArray(order) ? order : []) {
-    if (id === 'kitchen' || KITCHEN_CHILD_ID_SET.has(id)) {
-      if (!hasKitchen) {
-        normalized.push('kitchen');
-        hasKitchen = true;
-      }
-      continue;
-    }
+
 
     if (!seen.has(id)) {
       normalized.push(id);
@@ -169,11 +146,7 @@ export function normalizeModuleOrder(order = []) {
   return normalized;
 }
 
-export function expandModuleOrder(order = []) {
-  return normalizeModuleOrder(order).flatMap((id) => (
-    id === 'kitchen' ? KITCHEN_CHILD_IDS : [id]
-  ));
-}
+export function expandModuleOrder(order = []) { return normalizeModuleOrder(order); }
 
 export function moduleSection(id) {
   if (id === 'dashboard') return NAV_SECTION.overview;
@@ -204,8 +177,8 @@ export function sortNavigationItems(items = [], order = []) {
       const sectionDelta = moduleSection(leftId) - moduleSection(rightId);
       if (sectionDelta !== 0) return sectionDelta;
 
-      const leftOrderId = KITCHEN_CHILD_ID_SET.has(leftId) ? 'kitchen' : leftId;
-      const rightOrderId = KITCHEN_CHILD_ID_SET.has(rightId) ? 'kitchen' : rightId;
+      const leftOrderId = leftId;
+      const rightOrderId = rightId;
       const leftRank = orderIndex.get(leftOrderId) ?? Number.MAX_SAFE_INTEGER;
       const rightRank = orderIndex.get(rightOrderId) ?? Number.MAX_SAFE_INTEGER;
       return leftRank - rightRank || left.index - right.index;
@@ -239,36 +212,5 @@ export function resolveMobileNavOrder(order = [], availableIds = []) {
 }
 
 export function groupBuiltInModules(disabledModules = [], definitions = []) {
-  const disabled = new Set(Array.isArray(disabledModules) ? disabledModules : []);
-  const children = KITCHEN_CHILD_IDS.map((id) => ({
-    id,
-    enabled: !disabled.has(id),
-  }));
-  const enabledChildren = children.filter((child) => child.enabled).length;
-  const kitchen = {
-    id: 'kitchen',
-    children,
-    enabledChildren,
-    enabled: enabledChildren > 0,
-  };
-  const grouped = [];
-  let kitchenInserted = false;
-
-  for (const definition of Array.isArray(definitions) ? definitions : []) {
-    if (definition?.id === 'kitchen' || KITCHEN_CHILD_ID_SET.has(definition?.id)) {
-      if (!kitchenInserted) {
-        grouped.push(kitchen);
-        kitchenInserted = true;
-      }
-      continue;
-    }
-
-    grouped.push(definition);
-  }
-
-  if (!kitchenInserted) {
-    grouped.push(kitchen);
-  }
-
-  return grouped;
+  return Array.isArray(definitions) ? [...definitions] : [];
 }

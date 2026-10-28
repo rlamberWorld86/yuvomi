@@ -44,7 +44,7 @@ export const THUMB_RASTER_MAX_HEIGHT = 1280;
 /** Speicherort eines Dokuments; alte Zeilen ohne `storage_backend` leiten ihn ab. */
 export function documentStorageBackend(doc) {
   if (doc?.storage_backend) return doc.storage_backend;
-  return doc?.storage_provider === 'external' ? 'dms' : 'local';
+  return doc?.storage_provider === 'external' ? 'external' : 'local';
 }
 
 /**

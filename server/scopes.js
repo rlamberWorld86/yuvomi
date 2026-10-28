@@ -22,9 +22,6 @@
 // ein Modul teilen, z. B. calendar + reminders + birthdays).
 const SCOPE_MODULES = [
   { key: 'tasks',        prefixes: ['tasks'] },
-  { key: 'shopping',     prefixes: ['shopping'] },
-  { key: 'meals',        prefixes: ['meals', 'recipes', 'recipe-providers'] },
-  { key: 'pantry',       prefixes: ['pantry'] },
   { key: 'inventory',    prefixes: ['inventory'] },
   { key: 'calendar',     prefixes: ['calendar', 'reminders', 'birthdays'] },
   { key: 'notes',        prefixes: ['notes'] },
@@ -201,13 +198,6 @@ const READ_LEVEL_WRITES = Object.freeze([
     flags: '',
     methods: null,
     axes: Object.freeze(['session']),
-  }),
-  Object.freeze({
-    id: 'recipe-to-shopping',
-    pattern: '^\\/recipes\\/\\d+\\/to-shopping-list\\/?$',
-    flags: 'i',
-    methods: Object.freeze(['POST']),
-    axes: Object.freeze(['session', 'token']),
   }),
 ]);
 

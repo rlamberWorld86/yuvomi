@@ -269,7 +269,6 @@ const PLURAL_EXCEPTIONS = {
   'contacts.importDetailFailed': 'NO_NOUN',
   'documents.selectCount': 'NO_NOUN',
   'tasks.bulkSelectedCount': 'NO_NOUN',
-  'dashboard.todayShoppingCount': 'NO_NOUN',
   'dashboard.rewardsPending': 'NO_NOUN',
   'dashboard.healthRefill': 'NO_NOUN',
   'health.labs.abnormalBadge': 'NO_NOUN',
@@ -278,7 +277,6 @@ const PLURAL_EXCEPTIONS = {
   // --- Zahl in Klammern / hinter Doppelpunkt ------------------------------
   'category.errorInUse': 'PARENTHETICAL',
   'category.errorSubInUse': 'PARENTHETICAL',
-  'shopping.clearChecked': 'PARENTHETICAL',
   'contacts.importSubmit': 'PARENTHETICAL',
   'health.cycle.settings.applyToAllDone': 'PARENTHETICAL',
   // R22 (D6): "Personen vergleichen (2)" - der Name des Personenknopfs im Schichtplan.
@@ -329,7 +327,6 @@ const PLURAL_EXCEPTIONS = {
   'documents.folderUpload.fileConflictsTitle': 'TODO_ONE',
   'documents.folderUpload.folderConflictsTitle': 'TODO_ONE',
   'documents.folderUpload.rejectedTitle': 'TODO_ONE',
-  'dashboard.shoppingMore': 'TODO_ONE',             // dashboard.js:1485/2987/3530, Guard ist `> 0`
   'calendar.moreEvents': 'TODO_ONE',
   'calendar.searchCount': 'TODO_ONE',
   'contacts.bulkDeletedToast': 'TODO_ONE',
@@ -353,7 +350,6 @@ const PLURAL_EXCEPTIONS = {
   'inventory.navLabelAttention': 'TODO_ONE',        // router-Badge, Guard ist `> 0`
   'tasks.navLabelOverdue': 'TODO_ONE',              // router.js:1151, Guard ist `> 0`
   'subscriptions.metaInUseWarning': 'TODO_ONE',     // umgeht den Plural im String: „Abonnement(s)"
-  'settings.recipeProviderDeleteAccountConfirm': 'TODO_ONE',
 
   // --- tote Schluessel: in allen Locales, im Code nirgends ----------------
   // Gemessen am 06.09.2026: 0 Treffer ausserhalb von public/locales/, auch
@@ -441,7 +437,6 @@ const ONE_WITHOUT_COUNT = {
   'calendar.prevDays': { counts: [3, 30], where: 'public/pages/calendar.js periodStepOf' },
   'calendar.nextDays': { counts: [3, 30], where: 'public/pages/calendar.js periodStepOf' },
   // dashboard.js: count ist die Konstante EXPIRY_SOON_DAYS = 7 (utils/pantry-status.js).
-  'dashboard.pantryExpiringEmpty': { counts: [7], where: 'public/utils/pantry-status.js EXPIRY_SOON_DAYS' },
   // cron-label.js formatCronSchedule: `count < 1 || count > 23` -> null.
   'settings.backupSchedulerCronHourly': { min: 1, max: 23, where: 'public/settings/cron-label.js formatCronSchedule' },
   // modules-health.js typeIntervalLabel: 0/leer -> healthPreventionOneOff, sonst >= 1.
@@ -672,51 +667,3 @@ test('Arabisch: die Tageszaehler waehlen Dual und many statt der few-Form', asyn
 // `t('pantry.units.X')` ohne count hinter die Zahl setzten. Geprueft wird der
 // geteilte Helfer MIT der echten t() UND dass beide Aufrufer ihn nehmen - ein
 // Helfer, den niemand ruft, misst nichts.
-test('Vorrat: die Einheit flektiert mit der Menge, auch in Bruchzahlen', async () => {
-  const { pantryQuantityLabel, PANTRY_UNITS } = await import('../public/utils/pantry-units.js');
-  const fmt = (locale) => (n) => new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(n);
-  await setLocale('de');
-  assert.equal(pantryQuantityLabel(6, 'can', { t, formatNumber: fmt('de') }), '6 Dosen');
-  assert.equal(pantryQuantityLabel(1, 'can', { t, formatNumber: fmt('de') }), '1 Dose');
-  assert.equal(pantryQuantityLabel(3, 'jar', { t, formatNumber: fmt('de') }), '3 Gläser');
-  assert.equal(pantryQuantityLabel(1.5, 'pkg', { t, formatNumber: fmt('de') }), '1,5 Packungen');
-  assert.equal(pantryQuantityLabel(250, 'g', { t, formatNumber: fmt('de') }), '250 g');
-  // Der Basisschluessel bleibt der Name der Einheit (Auswahlfeld ohne Menge).
-  assert.equal(t('pantry.units.can'), 'Dose');
-  // Unbekannte Einheit: Rohwert statt Schluessel.
-  assert.equal(pantryQuantityLabel(2, 'Kiste', { t, formatNumber: fmt('de') }), '2 Kiste');
-  await setLocale('en');
-  assert.equal(pantryQuantityLabel(2, 'bottle', { t, formatNumber: fmt('en') }), '2 bottles');
-  await setLocale('pl');
-  assert.equal(pantryQuantityLabel(2, 'can', { t, formatNumber: fmt('pl') }), '2 puszki');
-  assert.equal(pantryQuantityLabel(5, 'can', { t, formatNumber: fmt('pl') }), '5 puszek');
-  await setLocale('de');
-  // Jede Zaehleinheit traegt in de _one und _other (Paritaet ueber test:i18n).
-  // Die metrischen Symbole flektieren nicht („5 g") und brauchen keine Variante.
-  const units = localeFile('de').pantry.units;
-  for (const unit of PANTRY_UNITS.filter((u) => !['g', 'kg', 'ml', 'l'].includes(u))) {
-    assert.ok(units[`${unit}_one`] && units[`${unit}_other`], `pantry.units.${unit}_one/_other fehlt`);
-  }
-});
-
-test('Vorrat und Uebersicht setzen die Menge ueber den flektierenden Helfer', () => {
-  const strip = (src) => {
-    let out = src;
-    for (let prev = ''; prev !== out;) { prev = out; out = out.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, ''); }
-    return out;
-  };
-  const body = (src, name) => {
-    src = src.replace(/\r\n/g, '\n');
-    const at = src.indexOf(`function ${name}(`);
-    assert.ok(at >= 0, `${name} fehlt`);
-    return src.slice(at, src.indexOf('\n}\n', at));
-  };
-  const pantry = strip(readFileSync(new URL('../public/pages/pantry.js', import.meta.url), 'utf8'));
-  const dashboard = strip(readFileSync(new URL('../public/pages/dashboard.js', import.meta.url), 'utf8'));
-  for (const [src, fn, file] of [[pantry, 'quantityText', 'pantry.js'], [pantry, 'shortfallText', 'pantry.js'],
-    [dashboard, 'pantryQuantityText', 'dashboard.js']]) {
-    const own = body(src, fn);
-    assert.match(own, /pantryQuantityLabel\(/, `${file} ${fn}: Menge ohne flektierende Einheit („6 Dose")`);
-    assert.doesNotMatch(own, /pantry\.units\.\$\{|unitLabel\(/, `${file} ${fn}: setzt den Singular selbst hinter die Zahl`);
-  }
-});

@@ -6,8 +6,8 @@ import { bindDisclosure, createRetryState, thirdPartyStatusLabel } from '/settin
 import {
   BUILT_IN_MODULES,
   DEFAULT_MODULE_ACCENT,
-  KITCHEN_CHILD_IDS,
-  KITCHEN_CHILD_LABEL_KEYS,
+
+
   NAV_SECTION,
   NAV_SECTIONS,
   NAV_SECTION_LABEL_KEYS,
@@ -28,7 +28,7 @@ import { sortableSet, restoreOrder } from '/utils/sortable.js';
 /** Die Sortable-Instanzen des Blatts: frei bei jedem Neuaufbau (`render`). */
 const navSortables = sortableSet();
 
-// Baut die geordnete Liste der Navigations-Rows: gesperrte, gewöhnliche, Kitchen
+
 // (als ein expandierbarer Eintrag) und Drittanbieter-Module — sortiert nach der
 // normalisierten Modul-Reihenfolge der Preferences.
 function buildRows(preferences) {
@@ -37,19 +37,13 @@ function buildRows(preferences) {
   // `hidden` = will ich nicht in meiner Navigation sehen. Siehe parseHiddenModules
   // in server/routes/preferences.js.
   const hidden = new Set(Array.isArray(preferences.hidden_modules) ? preferences.hidden_modules : []);
-  const kitchenChildren = KITCHEN_CHILD_IDS.map((id) => ({
-    id,
-    label: t(KITCHEN_CHILD_LABEL_KEYS[id]),
-    icon: MODULE_ICON[id],
-    enabled: !disabled.has(id),
-    hidden: hidden.has(id),
-  }));
+
 
   const rows = [];
-  let kitchenInserted = false;
+
 
   for (const module of BUILT_IN_MODULES) {
-    if (KITCHEN_CHILD_IDS.includes(module.id)) continue;
+
     rows.push({
       type: 'built-in',
       id: module.id,
@@ -64,38 +58,8 @@ function buildRows(preferences) {
     });
   }
 
-  const kitchenEnabledChildren = kitchenChildren.filter((child) => child.enabled).length;
-  const kitchenRow = {
-    type: 'kitchen',
-    id: 'kitchen',
-    orderId: 'kitchen',
-    section: NAV_SECTION.household,
-    label: t('nav.kitchen'),
-    icon: MODULE_ICON.kitchen,
-    children: kitchenChildren,
-    enabledChildren: kitchenEnabledChildren,
-    enabled: kitchenEnabledChildren > 0,
-    // Die Kueche ist EIN Eintrag in der mobilen Navigation, aber vier in der
-    // Seitenleiste. Ihr Ausblenden-Knopf steht deshalb fuer die Gruppe: er gilt
-    // als gedrueckt, wenn kein aktives Kind mehr sichtbar ist, und die einzelnen
-    // Kinder bleiben im aufgeklappten Feld getrennt schaltbar.
-    hidden: kitchenGroupHidden(kitchenChildren),
-    locked: false,
-    sortable: true,
-  };
-
-
-  // Kitchen an erster Definitionsposition einfügen (vor das erste Haushalts-Modul),
   // damit es konsistent mit der globalen Navigation erscheint.
-  const ordered = [];
-  for (const row of rows) {
-    if (!kitchenInserted && ['housekeeping', 'documents', 'rewards', 'contacts', 'birthdays', 'health', 'budget'].includes(row.id)) {
-      ordered.push(kitchenRow);
-      kitchenInserted = true;
-    }
-    ordered.push(row);
-  }
-  if (!kitchenInserted) ordered.push(kitchenRow);
+  const ordered = rows;
 
   // Die gespeicherte Reihenfolge gilt nur innerhalb der drei Navigationsgruppen.
   // Dashboard und Settings bleiben an ihren festen Positionen.
@@ -105,7 +69,7 @@ function buildRows(preferences) {
 
 /** Das Label des Griffs: Objekt und Position, wie im Einkauf und in den Verwaltern. */
 function handleLabel(name, index, total) {
-  return `${t('shopping.reorderHandle', { name })}, ${t('shopping.reorderPosition', { index, total })}`;
+  return `${t('common.reorderHandle', { name })}, ${t('common.reorderPosition', { index, total })}`;
 }
 
 /* D10 ZEILEN-ENDZONE (#2180, wie die Verwalter in #2152).
@@ -142,7 +106,7 @@ function rowEndHtml(row, position) {
   });
   return `${menu}
       <button type="button" class="row-action list-row__drag settings-module-row__handle" data-module-handle
-              aria-label="${esc(handleLabel(row.label, index, total))}" title="${esc(t('shopping.reorderHandleHint'))}"
+              aria-label="${esc(handleLabel(row.label, index, total))}" title="${esc(t('common.reorderHandleHint'))}"
               aria-keyshortcuts="ArrowUp ArrowDown">
         <i data-lucide="grip-vertical" class="icon-md" aria-hidden="true"></i>
       </button>`;
@@ -187,7 +151,7 @@ function hideToggleHtml(row, { hasStatusChip = true } = {}) {
   const label = row.groupLabelKey
     ? t(row.groupLabelKey)
     : t('settings.modulesHideForMe', { module: row.label });
-  // Nur verweisen, wo es auch etwas zu lesen gibt: die Kuechen-Kinder tragen
+
   // keinen Status-Chip, ein `aria-describedby` auf eine Id, die es nicht gibt,
   // sagt der Hilfstechnik NICHTS - genau der Zustand, den dieser Verweis
   // beheben sollte (Review zu PR #790).
@@ -247,57 +211,8 @@ function builtInRowHtml(row, position) {
   `;
 }
 
-/* DIE KÜCHE IST EIN EINTRAG UND VIER STATIONEN (Critique 2026-08-16, P2).
- *
- * Drei gemessene Befunde stehen hier jetzt anders: der Gruppen-Knopf stand am
- * Desktop 42px rechts der Augenspalte aller anderen Zeilen (die Küchenzeile
- * füllt die letzte Rasterspalte nicht, `auto` kollabierte dort auf 0), er trug
- * denselben Namen wie die Einzelknöpfe, obwohl er vier Module auf einmal
- * betrifft, und in den Kindzeilen lag er auf der ANDEREN Seite als in der
- * Elternzeile - dieselben zwei Entscheidungen tauschten innerhalb einer
- * aufgeklappten Karte die Seite.
- *
- * Die Kinder liegen deshalb jetzt in derselben Ordnung wie ihre Elternzeile
- * (Symbol und Beschriftung links, Ausblenden rechts), der Gruppen-Knopf hat
- * seinen eigenen Namen, und die Spalte wird im Stylesheet erzwungen statt
- * dem Raster überlassen.
- */
-function kitchenRowHtml(row, position) {
-  const stateClass = row.enabled ? 'settings-module-row--enabled' : 'settings-module-row--disabled';
-  const hiddenClass = row.hidden && row.enabled ? ' settings-module-row--hidden' : '';
-  return `
-    <div class="settings-module-row settings-module-row--sortable settings-module-row--kitchen ${stateClass}${hiddenClass}" data-module-row-id="${esc(row.orderId)}" data-module-order-id="${esc(row.orderId)}" data-module-name="${esc(row.label)}">
-      <div class="settings-module-row__icon" style="--module-row-accent:${moduleAccentVar('kitchen')}">
-        ${moduleIconHTML(row.icon)}
-      </div>
-      <div class="settings-module-row__body">
-        <div class="settings-module-row__title">
-          <strong>${esc(row.label)}</strong>
-          ${statusChipHtml(row)}
-        </div>
-        <button type="button" class="settings-disclosure__trigger settings-module-kitchen__trigger" aria-expanded="false" data-kitchen-expand>
-          <span>${t('settings.kitchenActiveCount', { count: row.enabledChildren })}</span>
-          <i data-lucide="chevron-down" class="settings-disclosure__icon" aria-hidden="true"></i>
-        </button>
-        <div class="settings-disclosure__panel settings-module-kitchen__children" data-kitchen-children hidden>
-          ${row.children.map((child) => `
-            <div class="settings-module-kitchen__child-row${child.hidden && child.enabled ? ' settings-module-kitchen__child-row--hidden' : ''}">
-              <div class="settings-module-kitchen__child">
-                ${moduleIconHTML(child.icon)}
-                <span>${esc(child.label)}</span>
-              </div>
-              ${hideToggleHtml(child, { hasStatusChip: false })}
-            </div>`).join('')}
-        </div>
-      </div>
-      ${endZoneHtml(row, position, hideToggleHtml({ ...row, id: 'kitchen', groupLabelKey: 'settings.modulesHideKitchenForMe' }))}
-    </div>
-  `;
-}
-
-
 function rowHtml(row, position = null) {
-  if (row.type === 'kitchen') return kitchenRowHtml(row, position);
+
   // Drittanbieter-Zeilen erreichen Mitglieder nie: /modules?admin=1 wird für sie
   // gar nicht abgefragt, thirdPartyModules bleibt leer.
   return builtInRowHtml(row, position);
@@ -388,36 +303,22 @@ function renderPage(container, rows, mobileOrder) {
   window.lucide?.createIcons({ el: container });
 }
 
-// Reihenfolge der sichtbaren, sortierbaren Order-IDs (inkl. dem einen Kitchen-
+
 // Eintrag). Wird vor dem Speichern via expandModuleOrder zurück auf die
-// kanonischen Kitchen-Kinder erweitert.
+
 function collectVisibleGlobalOrder(list) {
   return [...list.querySelectorAll('[data-module-order-id]')]
     .map((rowEl) => rowEl.dataset.moduleOrderId)
     .filter(Boolean);
 }
 
-/**
- * Die persönlich ausgeblendeten Module aus dem gerenderten Blatt lesen (#673).
- *
- * Der Gruppenknopf der Küche wird ÜBERSPRUNGEN, obwohl er `kitchen` trägt. Er
- * hier auf seine vier Kinder aufzulösen sah nach derselben Regel aus wie
- * `expandModuleOrder` bei der Reihenfolge, schrieb aber Kinder mit, die niemand
- * gewählt hatte: die Gruppe gilt als versteckt, sobald jedes Kind versteckt
- * ODER haushaltweit abgeschaltet ist - ein abgeschaltetes Kind landete damit in
- * `hidden_modules` und wäre nach dem Wiedereinschalten für dieses Mitglied
- * versteckt gewesen, über einen Knopf, den es gar nicht drücken konnte
- * (Gegenprüfung zur Review von #790).
- *
- * Nötig ist die Auflösung ohnehin nicht: die vier Kind-Knöpfe stehen immer im
- * DOM - das Feld ist nur `hidden` - und der Gruppenklick legt sie selbst um.
- */
+
 function collectHiddenModuleIds(buttons) {
   const ids = new Set();
   for (const btn of buttons) {
     if (btn.getAttribute('aria-pressed') !== 'true') continue;
     const id = btn.dataset.moduleHide;
-    if (!id || id === 'kitchen') continue;
+
     ids.add(id);
   }
   return [...ids];
@@ -662,7 +563,7 @@ function bindModuleListEvents(container, user, rows, unrenderedOrderIds = []) {
 
   list.addEventListener('keydown', (event) => { reorder.onKeydown(event); });
   list.addEventListener('click', (event) => {
-    if (event.target.closest('[data-kitchen-expand]')) return;
+
     reorder.onClick(event);
   });
 
@@ -686,19 +587,9 @@ function bindModuleListEvents(container, user, rows, unrenderedOrderIds = []) {
 
     applyHiddenState(btn, !wasHidden);
     markRowHidden(rows, btn.dataset.moduleHide, !wasHidden);
-    // Der Gruppenknopf der Kueche zieht seine vier Kinder mit, sonst laese
+
     // collectHiddenModuleIds gleich darauf einen Zustand, den niemand gesetzt hat.
-    if (btn.dataset.moduleHide === 'kitchen') {
-      for (const child of list.querySelectorAll('[data-module-hide]')) {
-        if (child !== btn && KITCHEN_CHILD_IDS.includes(child.dataset.moduleHide) && !child.disabled) {
-          applyHiddenState(child, !wasHidden);
-        }
-      }
-    } else if (KITCHEN_CHILD_IDS.includes(btn.dataset.moduleHide)) {
-      // Umgekehrte Richtung: vier einzeln ausgeblendete Kinder SIND die
-      // ausgeblendete Gruppe, und der Gruppenknopf muss das sagen.
-      syncKitchenGroupState(list, rows);
-    }
+
     // NICHT `disabled` waehrend des Speicherns: ein deaktivierter Knopf gibt den
     // Fokus ab, und genau den sollte dieser Pfad behalten (gemessen: sonst
     // landet er trotz In-place-Update auf `body`). Entprellt wird ueber eine
@@ -734,26 +625,7 @@ function bindModuleListEvents(container, user, rows, unrenderedOrderIds = []) {
   });
 }
 
-/* EIN AUFRÄUM-KLICK, DER DIE UNTERE LEISTE UMSCHREIBT, SAGT ES (Critique 2026-08-16, P1).
- *
- * Gemessen: wer den Kalender ausblendet, dessen drei Mobil-Plätze springen von
- * [Kalender, Aufgaben, Küche] auf [Aufgaben, Küche, Notizen] - Notizen hat
- * niemand gewählt. `resolveMobileNavOrder` füllt aus den Voreinstellungen nach,
- * sobald ein gewähltes Ziel nicht mehr zur Verfügung steht, und das ist auch
- * richtig so: eine leere Position wäre schlechter. Falsch war das Schweigen.
- *
- * WAS DIE LEISTE ZEIGT, IST WAS GESPEICHERT WIRD - und das ist eine Entscheidung,
- * keine Nachlässigkeit. Hier stand vorübergehend die Zusage, die eigene Wahl
- * überlebe das Ausblenden und kehre beim Wieder-Einblenden zurück. Sie liess
- * sich nicht halten: `resolveMobileNavOrder` VERDICHTET (module-order.js), also
- * fallen Anzeige-Platz und gespeicherter Platz auseinander, sobald ein Ziel
- * fehlt - und der Versuch, die übrigen Plätze aus dem gespeicherten Stand zu
- * ergänzen, warf beim nächsten Wechsel ein anderes, unberührtes Ziel heraus
- * (Gegenprüfung zur Review von PR #790). Drei Plätze können nicht beides:
- * einen versteckten Favoriten bewahren UND die sichtbare Anordnung speichern.
- * Für einen Haushalt ist die zweite Regel die verständlichere - man sieht, was
- * gilt. Der Toast nennt deshalb den Platz, der sich verschoben hat.
- */
+
 function readMobileSlotValues(container) {
   return [...container.querySelectorAll('[data-mobile-nav-slot]')].map((select) => select.value);
 }
@@ -797,36 +669,14 @@ function markRowHidden(rows, id, hidden) {
   if (!Array.isArray(rows) || !id) return;
   for (const row of rows) {
     if (row.id === id) row.hidden = hidden;
-    if (id === 'kitchen' && Array.isArray(row.children)) {
-      row.children.forEach((child) => { if (child.enabled) child.hidden = hidden; });
-    }
-    if (Array.isArray(row.children) && row.children.some((child) => child.id === id)) {
-      row.children.forEach((child) => { if (child.id === id) child.hidden = hidden; });
-      row.hidden = kitchenGroupHidden(row.children);
-    }
+
+
   }
 }
 
-/* ZUSTAND UMLEGEN, OHNE DAS BLATT NEU ZU BAUEN.
- *
- * `closest('.settings-module-row')` war hier falsch, und zwar genau fuer die
- * vier Kuechen-Kinder: ihre Knoepfe liegen IM aufgeklappten Feld der
- * Elternzeile, also traf `closest` die Kueche. Ein einzeln ausgeblendetes
- * Rezepte-Modul toente damit die ganze Kuechenzeile und haengte ihr den Chip an
- * - waehrend das Datenmodell korrekt sagte, die Gruppe sei noch sichtbar. Der
- * gespeicherte Wert stimmte; die Zeile behauptete etwas ueber sich, das nicht
- * galt (Review zu PR #790).
- *
- * Ein Kind traegt seine eigene Zeile (`.settings-module-kitchen__child-row`),
- * und die Gruppe rechnet ihren Zustand aus ihren Kindern - nicht aus dem Klick.
- */
+
 function applyHiddenState(btn, hidden) {
   btn.setAttribute('aria-pressed', String(hidden));
-  const childRow = btn.closest('.settings-module-kitchen__child-row');
-  if (childRow) {
-    childRow.classList.toggle('settings-module-kitchen__child-row--hidden', hidden);
-    return;
-  }
 
   const row = btn.closest('.settings-module-row');
   if (!row) return;
@@ -842,37 +692,7 @@ function applyHiddenState(btn, hidden) {
   }
 }
 
-/**
- * Die Kuechenzeile aus ihren vier Kindern nachziehen.
- *
- * Die Gruppe ist kein eigener Zustand, sondern eine Aussage ueber die Kinder:
- * sie gilt als ausgeblendet, wenn kein sichtbares Kind mehr uebrig ist. Wer
- * alle vier einzeln ausblendet, hat die Gruppe ausgeblendet - der Knopf sagte
- * bis zur Review trotzdem weiter "nicht gedrueckt", und der naechste Klick
- * darauf las sich als "ausblenden", obwohl er einblendet.
- */
-/**
- * Gilt die Kueche als ausgeblendet? Die eine Regel, an zwei Stellen gelesen.
- *
- * Exportiert und rein, damit sie eine Zusicherung tragen kann: `buildRows` und
- * `syncKitchenGroupState` stimmten nur ueberein, solange beide dieselbe Zeile
- * von Hand wiederholten - und die Gegenpruefung zur Review von #790 hat genau
- * an dieser Doppelung zwei Fehler gefunden.
- */
-export function kitchenGroupHidden(children = []) {
-  const relevant = children.filter((child) => child.enabled);
-  if (!relevant.length) return false;
-  return relevant.every((child) => child.hidden);
-}
-
-function syncKitchenGroupState(list, rows) {
-  const groupBtn = list.querySelector('[data-module-hide="kitchen"]');
-  const kitchen = rows?.find((row) => row.id === 'kitchen');
-  if (!groupBtn || !kitchen) return;
-  const hidden = kitchenGroupHidden(kitchen.children);
-  if (groupBtn.getAttribute('aria-pressed') === String(hidden)) return;
-  applyHiddenState(groupBtn, hidden);
-}
+export
 
 function bindMobileNavigationEvents(container, user) {
   const selects = [...container.querySelectorAll('[data-mobile-nav-slot]')];
@@ -945,7 +765,7 @@ export async function render(container, { user }) {
   const mobileOrder = resolveMobileNavOrder(preferences.mobile_nav_order, availableMobileIds);
   navSortables.clear();
   renderPage(container, rows, mobileOrder);
-  bindDisclosure(container, { triggerSelector: '[data-kitchen-expand]', panelSelector: '[data-kitchen-children]', id: 'kitchen-children-navigation' });
+
   bindModuleListEvents(container, user, rows, unrenderedOrderIds);
   bindMobileNavigationEvents(container, user);
 }

@@ -1,7 +1,7 @@
 import { t } from '/i18n.js';
 import { getPreferences, savePreferences } from '/settings/preferences-cache.js';
 import { settingSwitchRowHtml } from '/settings/components.js';
-import { BUILT_IN_MODULES, KITCHEN_CHILD_IDS, KITCHEN_CHILD_LABEL_KEYS } from '/settings/module-order.js';
+import { BUILT_IN_MODULES } from '/settings/module-order.js';
 
 /** Household-wide availability of the installed core modules. */
 export async function render(container) {
@@ -9,7 +9,6 @@ export async function render(container) {
   const disabled = new Set(preferences.disabled_modules ?? []);
   const modules = [
     ...BUILT_IN_MODULES.filter((module) => !module.locked),
-    ...KITCHEN_CHILD_IDS.map((id) => ({ id, labelKey: KITCHEN_CHILD_LABEL_KEYS[id] })),
   ];
   container.replaceChildren();
   container.insertAdjacentHTML('beforeend', `<section class="settings-section">

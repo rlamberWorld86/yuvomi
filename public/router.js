@@ -30,7 +30,6 @@ import { initPush, stopPush } from '/push.js';
 import { numberLocaleFor } from '/settings/region-presets.js';
 import { setDisplayTimeZone, zonedDateKey } from '/utils/timezone.js';
 import { rememberZonePrefs, forgetZonePrefs, noteZoneDecision } from '/utils/household-zone-hint.js';
-import { isKitchenRoute, getLastKitchenRoute } from '/utils/kitchen-tabs.js';
 import { swapPage, swapTheme } from '/utils/view-transition.js';
 import { moduleAccentToken, moduleAccentVar } from '/utils/module-accent.js';
 import { brandMarkSvg } from '/utils/brand-mark.js';
@@ -38,7 +37,6 @@ import {
   SEARCH_SECTIONS, NEW_ACTIONS, searchResultCount, markSegments, paletteCommands, paletteStatusText,
   readRecent, rememberRecent, visibleRecent, forgetAllRecent, RECENT_MAX,
 } from '/utils/search-sections.js';
-import { buildHelpRows } from '/utils/help.js';
 import { renderSkeletonList } from '/utils/skeleton.js';
 import { wirePaletteCombobox } from '/utils/palette-combobox.js';
 import { triggerPageFab, syncFabName, fabActionLabel } from '/utils/fab.js';
@@ -55,7 +53,6 @@ import {
   applyNavBadges, setNavBadge, resetNavBadges, navBadgeRoutes,
   moduleCountsFrom, navBadgeCountsFrom,
 } from '/utils/nav-badges.js';
-import { isNewerVersion, displayVersion, releasesNewForMe, pendingUpdateFor, changelogReleasesToShow } from '/utils/version.js';
 import { setMaxUploadBytes } from '/utils/upload-limit.js';
 import {
   rememberScrollPosition,
@@ -119,13 +116,9 @@ const ROUTES = [
   { path: '/pair',     page: '/pages/pair-display.js', requiresAuth: false, module: null, style: AUTH_STYLE, titleKey: 'pairDisplay.title' },
   { path: '/',         page: '/pages/dashboard.js', requiresAuth: true, module: 'dashboard', titleKey: 'dashboard.title' },
   { path: '/tasks',    page: '/pages/tasks.js',     requiresAuth: true, module: 'tasks',     titleKey: 'nav.tasks' },
-  { path: '/shopping', page: '/pages/shopping.js',  requiresAuth: true, module: 'shopping',  titleKey: 'nav.shopping' },
-  { path: '/meals',    page: '/pages/meals.js',     requiresAuth: true, module: 'meals',     titleKey: 'nav.meals' },
   { path: '/calendar', page: '/pages/calendar.js',  requiresAuth: true, module: 'calendar',  titleKey: 'nav.calendar' },
   { path: '/birthdays', page: '/pages/birthdays.js', requiresAuth: true, module: 'birthdays', titleKey: 'nav.birthdays' },
   { path: '/notes',    page: '/pages/notes.js',     requiresAuth: true, module: 'notes',     titleKey: 'nav.notes' },
-  { path: '/recipes',  page: '/pages/recipes.js',   requiresAuth: true, module: 'recipes',   titleKey: 'nav.recipes' },
-  { path: '/pantry',   page: '/pages/pantry.js',    requiresAuth: true, module: 'pantry',    titleKey: 'nav.pantry' },
   { path: '/contacts', page: '/pages/contacts.js',  requiresAuth: true, module: 'contacts',  titleKey: 'nav.contacts' },
   { path: '/documents', page: '/pages/documents.js', requiresAuth: true, module: 'documents', titleKey: 'nav.documents' },
 ];
@@ -670,7 +663,7 @@ function topLevelSection(path) {
 /** Das Modul einer Adresse fuer die Toast-Regel (D18): die Kueche zaehlt als eines. */
 function moduleSectionOf(path) {
   if (!path) return null;
-  return isKitchenRoute(path) ? '/kitchen' : topLevelSection(path);
+  return topLevelSection(path);
 }
 
 function getAppName() {
@@ -1117,26 +1110,16 @@ function sidebarAccountEl({ isDisplayShell = false } = {}) {
     btn.append(i, span);
     return btn;
   };
-  menu.append(
-    item('help', 'circle-help', 'nav.help', 'nav-account__help'),
-    // `nav-item--changelog` traegt den Update-Hinweis im Namen (applyUpdateBadge).
-    item('changelog', 'history', 'nav.changelog', 'nav-item--changelog'),
-  );
   // FUER EIN DISPLAY GIBT ES KEIN ABMELDEN (#1208). Ein Tablett meldet sich
   // nicht ab, es wird widerrufen - und `POST /auth/logout` beantwortet der
   // Server ihm mit 403. Der Eintrag haette eine Abmeldung versprochen, die nie
   // stattfindet. Monochrom wie die Geschwister: Danger-Rot erst im Confirm.
   if (!isDisplayShell) {
-    const sep = document.createElement('div');
-    sep.className = 'popover-menu__separator';
-    sep.setAttribute('role', 'separator');
-    menu.append(sep, item('logout', 'log-out', 'settings.logout', 'nav-account__logout'));
+    menu.append(item('logout', 'log-out', 'settings.logout', 'nav-account__logout'));
   }
   menu.addEventListener('click', (event) => {
     const action = event.target.closest?.('.popover-menu__item')?.dataset.action;
-    if (action === 'help') showHelpModal();
-    else if (action === 'changelog') showChangelogModal();
-    else if (action === 'logout') confirmAndLogout();
+    if (action === 'logout') confirmAndLogout();
   });
 
   wrap.append(trigger, menu);
@@ -1178,10 +1161,10 @@ function syncSidebarAccount(root = document.querySelector('.nav-sidebar__account
   }
   const label = displayName ? t('nav.accountMenu', { name: displayName }) : t('nav.accountMenuAnonymous');
   trigger.dataset.baseLabel = label;
-  trigger.setAttribute('aria-label', withUpdateHint(label, pendingUpdateVersion()));
+  trigger.setAttribute('aria-label', label);
   trigger.setAttribute('title', label);
   for (const btn of root.querySelectorAll('.popover-menu__item')) {
-    const key = { help: 'nav.help', changelog: 'nav.changelog', logout: 'settings.logout' }[btn.dataset.action];
+    const key = { logout: 'settings.logout' }[btn.dataset.action];
     const span = btn.querySelector('span');
     if (key && span) span.textContent = t(key);
   }
@@ -1345,7 +1328,6 @@ function primeModuleCountsFrom(data, { filtered = false } = {}) {
   if (filtered || !data) return;
   _moduleCounts = moduleCountsFrom(data, {
     isAdmin: routerState.currentUser?.role === 'admin',
-    shoppingVisible: navItems().some((item) => item.module === 'shopping'),
   });
   _moduleCountsAt = Date.now();
   primeNavBadges(data);
@@ -1387,8 +1369,7 @@ async function refreshModuleCounts() {
       isAdmin: routerState.currentUser?.role === 'admin',
       // `navItems()` ist bereits nach Zugang gefiltert und damit die richtige
       // Quelle fuer die Frage, ob der Einkauf diesem Mitglied offensteht.
-      shoppingVisible: navItems().some((item) => item.module === 'shopping'),
-    });
+      });
     _moduleCountsAt = Date.now();
     primeNavBadges(res);
     return true;
@@ -1565,24 +1546,6 @@ function buildMoreSheetBody() {
       navHref: settingsItem.navHref,
     }));
   }
-  system.appendChild(moreActionEl({
-    labelKey: 'nav.help',
-    icon: 'circle-help',
-    className: 'more-item--help',
-    onClick: () => {
-      if (window._closeMoreSheet) window._closeMoreSheet({ restoreFocus: false });
-      showHelpModal();
-    },
-  }));
-  system.appendChild(moreActionEl({
-    labelKey: 'nav.changelog',
-    icon: 'history',
-    className: 'more-item--changelog',
-    onClick: () => {
-      if (window._closeMoreSheet) window._closeMoreSheet({ restoreFocus: false });
-      showChangelogModal();
-    },
-  }));
   /* Abmelden ist das vierte Ziel der Reihe, nicht mehr eine Zeile darunter.
    *
    * DER ANLASS FUER DIE EIGENE ZEILE IST WEG, NICHT NUR ALT. Gemessen bei
@@ -1691,7 +1654,6 @@ async function renderPage(route, previousPath = null, scrollTarget = 0, { signal
       // renderPage - beim Kaltstart gab es da noch keine Leiste.
       updateNav(routerState.currentPath);
       // Nebenläufig und still: der Hinweis darf das erste Rendern nicht aufhalten.
-      checkForUpdate();
       /* Und die Zahlen an den Nav-Zielen (#868).
        *
        * ERST AUS DEM SPEICHER, dann nachziehen - aus demselben Grund wie beim
@@ -2767,23 +2729,16 @@ const SHORTCUTS = [
     // mobil klappt die Lupe ueber :focus-within zum Feld auf.
     document.querySelector('#cal-search-input')?.focus();
   } },
-  { key: '?',   description: () => t('shortcuts.help'),    action: () => showHelpModal() },
   { key: 'g d', description: () => t('shortcuts.goDash'),  action: () => navigate('/') },
   { key: 'g t', description: () => t('shortcuts.goTasks'), action: () => navigate('/tasks') },
   { key: 'g c', description: () => t('shortcuts.goCal'),   action: () => navigate('/calendar') },
   // `g s` WIRKT WEITER, steht aber nicht doppelt in der Hilfe (Critique R21,
   // Alex): neben `g k s` stand derselbe Einkauf zweimal. Die eine Zeile nennt
   // beide Wege (Label an `g k s`).
-  { key: 'g s', hidden: true, description: () => t('shortcuts.goShop'),  action: () => navigate('/shopping') },
   { key: 'g n', description: () => t('shortcuts.goNotes'),   action: () => navigate('/notes')              },
   // Die 3er-Chords nennen ihr konkretes Ziel (Essensplan/Rezepte/Einkauf):
   // vier identische "Küche"-Zeilen im Hilfe-Modal waren nicht unterscheidbar
   // (Audit A1-13).
-  { key: 'g k',   description: () => t('shortcuts.goKitchen'), action: () => navigate(getLastKitchenRoute()) },
-  { key: 'g k m', description: () => t('nav.meals'),           action: () => navigate('/meals')             },
-  { key: 'g k r', description: () => t('nav.recipes'),         action: () => navigate('/recipes')           },
-  { key: 'g k s', label: () => 'g s / g k s', description: () => t('nav.shopping'), action: () => navigate('/shopping') },
-  { key: 'g k v', description: () => t('nav.pantry'),          action: () => navigate('/pantry')            },
   // Beschriftung wie bei den Kuechen-3er-Chords direkt aus den Nav-Labels -
   // kein zweiter Uebersetzungssatz. Nur die zwei Ziele mit eindeutiger
   // deutscher Merkhilfe (Budget, Einstellungen); die uebrigen Kandidaten
@@ -2870,32 +2825,9 @@ function initKeyboardShortcuts() {
 
     const key = e.key.toLowerCase();
 
-    // 3-Tasten-Chord: g k {m|r|s}
-    if (_pendingKey === 'g k') {
-      clearTimeout(_pendingTimer);
-      _pendingKey = null;
-      const chord3 = `g k ${key}`;
-      const s3 = SHORTCUTS.find((s) => s.key === chord3);
-      if (s3) { e.preventDefault(); s3.action(); return; }
-      // Kein 3-Chord-Match → g k selbst ausführen
-      const gk = SHORTCUTS.find((s) => s.key === 'g k');
-      if (gk) { e.preventDefault(); gk.action(); }
-      return;
-    }
-
-    // 2-Tasten-Chord: g {d|t|c|s|n|k}
+    // 2-Tasten-Chord: g und Zielbuchstabe.
     if (_pendingKey === 'g' && key !== 'g') {
       clearTimeout(_pendingTimer);
-      if (key === 'k') {
-        // k ist Präfix für 3-Chord — auf dritten Tastendruck warten
-        _pendingKey = 'g k';
-        _pendingTimer = setTimeout(() => {
-          _pendingKey = null;
-          const gk = SHORTCUTS.find((s) => s.key === 'g k');
-          if (gk) gk.action();
-        }, 1000);
-        return;
-      }
       _pendingKey = null;
       const combo = `g ${key}`;
       const shortcut = SHORTCUTS.find((s) => s.key === combo);
@@ -2912,486 +2844,6 @@ function initKeyboardShortcuts() {
     const shortcut = SHORTCUTS.find((s) => !s.key.includes(' ') && shortcutApplies(s)
       && (s.key === key || (s.aliases?.().includes(key) && (!s.bareFocusOnly || focusIsBare()))));
     if (shortcut) { e.preventDefault(); shortcut.action(); }
-  });
-}
-
-function showHelpModal() {
-  // Mirrors the CSS sidebar↔bottom-nav breakpoint (sidebar is min-width:1024px):
-  // without a keyboard, shortcut rows are useless — show a plain-language guide.
-  const coarsePointer = window.matchMedia('(max-width: 1023px)').matches;
-  const helpRows = buildHelpRows({ coarsePointer, shortcuts: SHORTCUTS.filter((s) => shortcutApplies(s)), t });
-  // DER DIALOG HEISST, WAS ER ZEIGT (R19): am Zeiger listet er die
-  // Tastenkuerzel und heisst „Tastenkombinationen" - wie der Eintrag `?` und
-  // der Befehl in der Palette, die ihn oeffnen. „Hilfe" bleibt die
-  // Klartext-Fassung am Finger.
-  const helpTitle = coarsePointer ? t('help.title') : t('shortcuts.help');
-
-  const rows = helpRows.map((r) => r.key
-    ? `<div class="help-row">
-         <kbd class="shortcut-kbd">${esc(r.key)}</kbd>
-         <span class="shortcut-desc">${esc(r.desc)}</span>
-       </div>`
-    : `<div class="help-row">
-         <i data-lucide="${esc(r.icon)}" class="help-row__icon icon-md" aria-hidden="true"></i>
-         <span class="shortcut-desc">${esc(r.desc)}</span>
-       </div>`
-  ).join('');
-
-  // DER GETEILTE DIALOG (R20, Re-Critique 2026-10-17 A1 P1-2). Hier stand ein
-  // eigenes Overlay mit `aria-modal` am Grund statt am Dialog, einem `span`
-  // als Titel und einem Esc-Listener am Dokument: der Fokus blieb auf der
-  // Seite, Tab lief hinaus, und nach dem Schliessen fand niemand zurueck.
-  // openModal() bringt Top-Layer, Fokusfalle, Esc, Zurueck-Geste und die
-  // Rueckgabe an den Ausloeser mit - wie jeder andere Dialog der App. Nichts
-  // darin ist ungespeichert, also ohne Verwerfen-Rueckfrage.
-  //
-  // Am Zeiger stehen die Kuerzel in ZWEI SPALTEN (`--columns`): zwanzig
-  // Zeilen untereinander ergaben bei 1440x900 852px Einzelspalte.
-  // `--help-rows` haelt die Spalten gleich lang, gelesen wird spaltenweise.
-  const columns = !coarsePointer;
-  openModal({
-    title: helpTitle,
-    size: columns ? 'lg' : 'sm',
-    dirtyGuard: false,
-    content: `
-      <div class="shortcuts-list${columns ? ' shortcuts-list--columns' : ''}"${columns ? ` style="--help-rows:${Math.ceil(helpRows.length / 2)}"` : ''}>${rows}</div>
-      <!-- Nutzerhandbuch aus der Community (#799). Es lebt in einem fremden
-           Repository und in fremder Regie - deshalb steht die Herkunft im
-           Linktext und nicht nur im Hinweis darunter: wer hier klickt,
-           verlaesst das Projekt, und das soll er vorher wissen. -->
-      <p class="help-guide">
-        <a href="https://kyrodan.github.io/yuvomi-docs/" target="_blank" rel="noopener noreferrer">
-          ${esc(t('help.guideLink'))}
-        </a>
-        <span class="help-guide__hint">${esc(t('help.guideHint'))}</span>
-      </p>
-      <!-- DER RUNDGANG LAESST SICH WIEDERHOLEN (R23 S10, Critique G6 P3 "Hilfe
-           nur Kuerzel"). Die Hilfe trug am Zeiger nur die Tastenkuerzel; wer den
-           Rundgang uebersprungen hatte, kam nie wieder an ihn. Der Knopf fuehrt
-           auf die Uebersicht und zeigt ihn dort (dashboard.js, REPLAY_TOUR_KEY). -->
-      <p class="help-tour">
-        <button type="button" class="btn btn--secondary btn--sm" data-help-tour>
-          <i data-lucide="play-circle" aria-hidden="true"></i>${esc(t('help.replayTour'))}
-        </button>
-      </p>`,
-    onSave(panel) {
-      panel.querySelector('[data-help-tour]')?.addEventListener('click', () => {
-        try { sessionStorage.setItem('yuvomi-replay-tour', '1'); } catch { /* ohne Speicher kein Rundgang */ }
-        closeModal({ force: true });
-        navigate('/');
-      });
-    },
-  });
-}
-
-// --------------------------------------------------------
-// Update-Hinweis (#490)
-// --------------------------------------------------------
-
-// Zuletzt vom Server gemeldete neueste Release-Version. Persistiert, damit der
-// Punkt nach einem Reload sofort wieder steht, statt bis zur nächsten Prüfung
-// zu verschwinden und dann grundlos zurückzukommen.
-const UPDATE_LATEST_KEY = 'yuvomi.update.latest';
-const UPDATE_CHECKED_AT_KEY = 'yuvomi.update.checkedAt';
-
-/**
- * Was DIESES KONTO zuletzt gesehen hat (#496, seit Migration 173 am Konto).
- *
- * Zwei Merker, zwei Fragen: `latest` ist die zuletzt bekannte VERÖFFENTLICHTE
- * Version und steuert den Punkt an der Navigation ("gibt es draußen etwas
- * Neueres"); `version` ist die INSTALLIERTE Version beim letzten Blick und
- * steuert die Liste ("hat sich in MEINER App etwas geändert"). Ein Haushalt auf
- * 2.55 soll nicht lesen, was 2.61 gebracht hat - bei ihm ist davon nichts
- * passiert.
- *
- * Vorher lagen beide im localStorage. Das hieß: wer am Rechner gelesen hat,
- * bekam auf dem Tablet denselben Punkt und dieselbe Liste noch einmal. Der
- * zuletzt von GitHub gemeldete Stand bleibt dagegen lokal - er ist ein
- * Zwischenspeicher für eine Auskunft des Servers, kein Zustand einer Person.
- */
-function changelogSeen() {
-  return routerState.currentUser?.changelog_seen || { version: null, latest: null };
-}
-// Der Server hält GitHub-Releases 30 Minuten im Cache; häufigeres Fragen wäre
-// reiner Verkehr für eine Information, die sich um Wochen bewegt.
-const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
-
-/** Neuere Version, die noch niemand angesehen hat - oder '' wenn alles gesehen/aktuell. */
-function pendingUpdateVersion() {
-  // Nur fuer Admins (Critique R19, Regel und Begruendung in utils/version.js).
-  return pendingUpdateFor({
-    latest: localStorage.getItem(UPDATE_LATEST_KEY) || '',
-    current: getAppVersion(),
-    seen: changelogSeen().latest || '',
-    isAdmin: routerState.currentUser?.role === 'admin',
-  });
-}
-
-/**
- * Setzt bzw. entfernt den Punkt an allen Einstiegen zum Änderungsverlauf.
- * Auf Mobil liegt der Eintrag im „Mehr"-Sheet - ohne Punkt am Sheet-Button
- * bliebe der Hinweis dort unsichtbar, deshalb bekommt auch dieser einen.
- */
-function toggleUpdateDot(el, on) {
-  const existing = el.querySelector('.nav-dot');
-  if (!on) { existing?.remove(); return; }
-  if (existing) return;
-  const dot = document.createElement('span');
-  dot.className = 'nav-dot';
-  dot.setAttribute('aria-hidden', 'true');
-  // Am Icon-Well hängt der Punkt auch in der eingeklappten Sidebar am richtigen
-  // Fleck; die Listenzeile im „Mehr"-Sheet hat keins.
-  (el.querySelector('.nav-item__icon-wrap') ?? el).appendChild(dot);
-}
-
-/**
- * Der Punkt ist rein visuell - die Ansage steckt im Namen des Elements.
- * Ohne `version` bleibt der Name unverändert.
- */
-function withUpdateHint(label, version) {
-  if (!version) return label;
-  return `${label} - ${t('changelog.updateAvailable', { version: displayVersion(version) })}`.trim();
-}
-
-function applyUpdateBadge() {
-  const version = pendingUpdateVersion();
-  // Die Kontozeile traegt den Punkt fuer das Menue, in dem „Aenderungen" jetzt
-  // steht - hinter einem geschlossenen Menue waere der Hinweis sonst unsichtbar.
-  for (const el of document.querySelectorAll('.nav-sidebar__account-trigger, .nav-sidebar__account-menu .nav-item--changelog, .more-item--changelog, #more-btn')) {
-    toggleUpdateDot(el, Boolean(version));
-  }
-  const account = document.querySelector('.nav-sidebar__account-trigger');
-  if (account?.dataset.baseLabel) account.setAttribute('aria-label', withUpdateHint(account.dataset.baseLabel, version));
-  // Den Namen des „Mehr"-Buttons setzt setMoreButtonState bei jeder Navigation
-  // neu; sein Zusatz gehört deshalb dorthin und nicht hierher, sonst wäre er
-  // nach dem ersten Seitenwechsel wieder weg.
-  for (const el of document.querySelectorAll('.nav-item--changelog, .more-item--changelog')) {
-    const label = withUpdateHint(t('nav.changelog'), version);
-    el.setAttribute('aria-label', label);
-    if (el.hasAttribute('title')) el.setAttribute('title', label);
-  }
-}
-
-/**
- * Fragt den Änderungsverlauf-Proxy nach der neuesten Version. Bewusst still:
- * schlägt der Abruf fehl (kein Netz, GitHub nicht erreichbar), bleibt der zuletzt
- * bekannte Stand stehen - eine Fehlermeldung für eine Nebeninformation wäre Lärm.
- */
-async function checkForUpdate({ force = false } = {}) {
-  const lastCheck = Number(localStorage.getItem(UPDATE_CHECKED_AT_KEY) || 0);
-  const age = Date.now() - lastCheck;
-  if (!force && lastCheck && age >= 0 && age < UPDATE_CHECK_INTERVAL_MS) {
-    applyUpdateBadge();
-    return;
-  }
-
-  try {
-    const payload = await api.get('/changelog');
-    const latest = String(payload?.data?.latest_version || '').trim();
-    // Der mitgelieferte Stand beantwortet die Update-Frage nicht - er kennt
-    // per Konstruktion nichts Neueres als sich selbst. Der Zeitstempel bleibt
-    // deshalb stehen, sonst gaelte die Frage sechs Stunden lang als geklaert,
-    // obwohl GitHub gar nicht geantwortet hat (#838).
-    if (payload?.data?.source !== 'local') {
-      localStorage.setItem(UPDATE_CHECKED_AT_KEY, String(Date.now()));
-    }
-    if (latest) localStorage.setItem(UPDATE_LATEST_KEY, latest);
-  } catch { /* still: siehe oben */ }
-  applyUpdateBadge();
-}
-
-function versionText(value) {
-  return String(value || '').trim() || t('changelog.unknownVersion');
-}
-
-function versionKey(value) {
-  return String(value || '').trim().replace(/^v/i, '').toLowerCase();
-}
-
-function renderChangelogStatus(panel, message, tone = 'muted') {
-  const status = panel.querySelector('#changelog-status');
-  if (!status) return;
-  status.hidden = false;
-  status.className = `changelog-status changelog-status--${tone}`;
-  status.textContent = message;
-}
-
-/**
- * Ein Eintrag als Vorspann plus aufklappbare Begruendung.
- *
- * DAS IST DER KERN VON #496. Der Changelog erzaehlt seit v2.41.0 zweistufig -
- * ein fett gesetzter Satz, der die Aenderung benennt, darunter warum. Die
- * Ansicht hat diese Stufe bisher eingeebnet und daraus wieder Prosa gemacht.
- * Wer scannen will, liest jetzt nur die Vorspaenne; wer die Geschichte will,
- * klappt sie auf.
- *
- * Ohne Begruendung (Eintraege vor 2.41.0) gibt es nichts aufzuklappen - dann
- * steht der Vorspann allein, ohne Zusammenklapp-Dreieck, das nichts verbirgt.
- */
-function entryNode(entry) {
-  const li = document.createElement('li');
-  const lead = String(entry?.lead || '');
-  const detail = String(entry?.detail || '');
-  if (!detail) {
-    li.className = 'changelog-entry changelog-entry--plain';
-    li.textContent = lead;
-    return li;
-  }
-  li.className = 'changelog-entry';
-  const details = document.createElement('details');
-  const summary = document.createElement('summary');
-  summary.className = 'changelog-entry__lead';
-  summary.textContent = lead;
-  const body = document.createElement('p');
-  body.className = 'changelog-entry__detail';
-  body.textContent = detail;
-  details.appendChild(summary);
-  details.appendChild(body);
-  li.appendChild(details);
-  return li;
-}
-
-/**
- * Die Eintraege einer Section - aus `entries`, sonst aus `items`.
- *
- * Der Rueckfall ist kein Schmuck: `items` ist die Form, die diese Route seit
- * jeher liefert, und ein Client, der gegen einen aelteren Server laeuft (oder
- * gegen einen Cache davon), bekommt sonst eine leere Liste statt der Texte.
- */
-function sectionEntries(section) {
-  if (Array.isArray(section?.entries) && section.entries.length) return section.entries;
-  return (Array.isArray(section?.items) ? section.items : [])
-    .map((item) => ({ lead: String(item || ''), detail: '' }));
-}
-
-function appendReleaseSection(parent, section) {
-  const block = document.createElement('section');
-  block.className = 'changelog-section';
-
-  const title = document.createElement('h4');
-  title.className = 'changelog-section__title';
-  title.textContent = section.title || t('changelog.changes');
-  block.appendChild(title);
-
-  const list = document.createElement('ul');
-  list.className = 'changelog-section__list';
-  for (const entry of sectionEntries(section)) list.appendChild(entryNode(entry));
-  block.appendChild(list);
-  parent.appendChild(block);
-}
-
-function appendReleaseCard(parent, release, currentVersion) {
-  const isCurrent = Boolean(versionKey(release.version))
-    && versionKey(release.version) === versionKey(currentVersion);
-  const card = document.createElement('article');
-  card.className = `changelog-release${isCurrent ? ' changelog-release--current' : ''}`;
-
-  const header = document.createElement('div');
-  header.className = 'changelog-release__header';
-  const title = document.createElement('h3');
-  title.className = 'changelog-release__version';
-  title.textContent = versionText(release.version);
-  header.appendChild(title);
-
-  if (isCurrent) {
-    const badge = document.createElement('span');
-    badge.className = 'changelog-release__badge';
-    badge.textContent = t('changelog.currentBadge');
-    header.appendChild(badge);
-  }
-  card.appendChild(header);
-
-  const sections = Array.isArray(release.sections) ? release.sections : [];
-  if (sections.length) {
-    for (const section of sections) appendReleaseSection(card, section);
-  } else {
-    const empty = document.createElement('p');
-    empty.className = 'changelog-release__empty';
-    empty.textContent = t('changelog.noReleaseNotes');
-    card.appendChild(empty);
-  }
-  parent.appendChild(card);
-}
-
-// Wie viele Vorspaenne die "Neu bei dir"-Liste hoechstens zeigt. Wer nach
-// zwanzig Versionen aktualisiert, soll eine LISTE bekommen und keine zweite
-// Textwand - der Rest steht darunter, und die Zahl wird genannt statt still
-// abgeschnitten.
-const WHATS_NEW_MAX = 12;
-
-/**
- * Der Block, mit dem die Ansicht oeffnet: was sich seit dem letzten Blick
- * geaendert hat, als Liste der Vorspaenne (#496).
- *
- * BEIM ERSTEN OEFFNEN bleibt er weg. Ohne frueheren Stand gibt es keine
- * Aussage darueber, was jemand verpasst hat - alles zu zeigen waere die
- * Behauptung, er haette alles verpasst.
- */
-function appendWhatsNew(parent, releases, currentVersion, seenInstalled) {
-  const fresh = releasesNewForMe(releases, currentVersion, seenInstalled);
-  if (!fresh.length) return;
-
-  const entries = fresh.flatMap((release) =>
-    (Array.isArray(release.sections) ? release.sections : []).flatMap(sectionEntries));
-  if (!entries.length) return;
-
-  const box = document.createElement('section');
-  box.className = 'changelog-whats-new';
-
-  const title = document.createElement('h3');
-  title.className = 'changelog-whats-new__title';
-  title.textContent = t('changelog.whatsNewTitle');
-  box.appendChild(title);
-
-  const since = document.createElement('p');
-  since.className = 'changelog-whats-new__since';
-  since.textContent = t('changelog.whatsNewSince', { version: displayVersion(seenInstalled) });
-  box.appendChild(since);
-
-  const list = document.createElement('ul');
-  list.className = 'changelog-section__list';
-  for (const entry of entries.slice(0, WHATS_NEW_MAX)) list.appendChild(entryNode(entry));
-  box.appendChild(list);
-
-  const hidden = entries.length - WHATS_NEW_MAX;
-  if (hidden > 0) {
-    const more = document.createElement('p');
-    more.className = 'changelog-whats-new__more';
-    more.textContent = t('changelog.whatsNewMore', { count: hidden });
-    box.appendChild(more);
-  }
-  parent.appendChild(box);
-}
-
-function renderChangelog(panel, payload) {
-  const data = payload?.data ?? {};
-  const currentVersion = data.current_version;
-  const latestVersion = data.latest_version;
-  const releases = Array.isArray(data.releases) ? data.releases : [];
-
-  panel.querySelector('#changelog-current-version').textContent = versionText(currentVersion);
-  panel.querySelector('#changelog-latest-version').textContent = versionText(latestVersion);
-
-  // Steht ein Update an, ist das die Nachricht - ob die laufende Version in der
-  // GitHub-Liste auftaucht, interessiert dann niemanden mehr.
-  //
-  // Der mitgelieferte Stand geht beidem vor: er kann per Konstruktion nichts
-  // ueber neuere Versionen wissen, also waere sowohl "Version X ist verfuegbar"
-  // als auch "diese Version steht in den GitHub-Releases" eine Aussage ueber
-  // etwas, das gerade niemand nachsehen konnte (#838).
-  const local = data.source === 'local';
-  const updateAvailable = !local && isNewerVersion(latestVersion, currentVersion);
-  const note = panel.querySelector('#changelog-version-note');
-  if (local) {
-    note.textContent = t('changelog.offlineNotice');
-  } else if (updateAvailable) {
-    note.textContent = t('changelog.updateAvailable', { version: displayVersion(latestVersion) });
-  } else {
-    note.textContent = data.current_in_releases
-      ? t('changelog.currentFound')
-      : t('changelog.currentMissing');
-  }
-  note.classList.toggle('changelog-version-note--warning', local || (!updateAvailable && !data.current_in_releases));
-  note.classList.toggle('changelog-version-note--update', updateAvailable);
-
-  // Der Nutzer sieht die Liste gerade - der Punkt an der Navigation hat seinen
-  // Zweck erfüllt und verschwindet, bis eine noch neuere Version erscheint.
-  if (latestVersion) {
-    localStorage.setItem(UPDATE_LATEST_KEY, String(latestVersion));
-    localStorage.setItem(UPDATE_CHECKED_AT_KEY, String(Date.now()));
-  }
-
-  const status = panel.querySelector('#changelog-status');
-  if (status) status.hidden = true;
-
-  const list = panel.querySelector('#changelog-list');
-  list.replaceChildren();
-  if (!releases.length) {
-    renderChangelogStatus(panel, t('changelog.empty'), 'muted');
-    return;
-  }
-
-  const fragment = document.createDocumentFragment();
-  // Erst lesen, dann fortschreiben: der Block beantwortet die Frage nach dem
-  // ZUSTAND VOR diesem Aufruf, und ein Marker, der schon gesetzt ist, waere
-  // die Antwort "nichts Neues" - jedes Mal.
-  const seenInstalled = changelogSeen().version || '';
-  appendWhatsNew(fragment, releases, currentVersion, seenInstalled);
-  for (const release of changelogReleasesToShow(releases, currentVersion, seenInstalled)) {
-    appendReleaseCard(fragment, release, currentVersion);
-  }
-  // Der ganze Verlauf liegt auf GitHub, auf Englisch - der Link sagt beides.
-  const more = document.createElement('p');
-  more.className = 'changelog-all';
-  const link = document.createElement('a');
-  link.href = CHANGELOG_URL;
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
-  link.textContent = t('changelog.allReleases');
-  more.appendChild(link);
-  fragment.appendChild(more);
-  list.appendChild(fragment);
-  markChangelogSeen(latestVersion);
-}
-
-/**
- * Beide Merker am Konto fortschreiben, nachdem die Liste gezeigt wurde.
- *
- * AUCH BEIM ERSTEN MAL, obwohl dann nichts angezeigt wurde: sonst gilt der
- * nächste Aufruf wieder als erster und die Liste bliebe für immer leer.
- *
- * Der lokale Stand wird sofort mitgezogen, damit der Punkt in derselben
- * Sekunde verschwindet - auf die Antwort des Servers zu warten hieße, ihn
- * einen Wimpernschlag lang stehen zu lassen, nachdem man gelesen hat. Ein
- * Fehlschlag bleibt still: dann steht der Punkt beim nächsten Laden wieder da,
- * was lästig, aber ehrlich ist.
- */
-function markChangelogSeen(latestVersion) {
-  const seen = changelogSeen();
-  if (routerState.currentUser) {
-    routerState.currentUser.changelog_seen = {
-      version: getAppVersion() || seen.version,
-      latest: latestVersion || seen.latest,
-    };
-  }
-  applyUpdateBadge();
-  api.post('/auth/changelog-seen', latestVersion ? { latest: String(latestVersion) } : {})
-    .catch(() => { /* still: siehe oben */ });
-}
-
-const CHANGELOG_URL = 'https://github.com/ulsklyc/yuvomi/blob/main/CHANGELOG.md';
-
-function showChangelogModal() {
-  openModal({
-    title: t('changelog.title'),
-    size: 'xl',
-    content: `
-      <div class="changelog-modal">
-        <div class="changelog-summary" aria-live="polite">
-          <div class="changelog-summary__item">
-            <span>${esc(t('changelog.currentVersion'))}</span>
-            <strong id="changelog-current-version">${esc(t('changelog.loadingShort'))}</strong>
-          </div>
-          <div class="changelog-summary__item">
-            <span>${esc(t('changelog.latestVersion'))}</span>
-            <strong id="changelog-latest-version">${esc(t('changelog.loadingShort'))}</strong>
-          </div>
-        </div>
-        <p class="changelog-version-note" id="changelog-version-note"></p>
-        <div class="changelog-status changelog-status--muted" id="changelog-status" role="status">
-          ${esc(t('changelog.loading'))}
-        </div>
-        <div class="changelog-list" id="changelog-list"></div>
-      </div>
-    `,
-    onSave(panel) {
-      api.get('/changelog')
-        .then((payload) => renderChangelog(panel, payload))
-        .catch(() => {
-          panel.querySelector('#changelog-list')?.replaceChildren();
-          renderChangelogStatus(panel, t('changelog.loadError'), 'error');
-        });
-    },
   });
 }
 
@@ -3580,9 +3032,6 @@ function paletteLocal(q) {
   // Hilfe hat keine Seite, nur ein Blatt - am Desktop lag sie hinter dem
   // Avatar (R14, A1 P3-6). Die Tastenkombinationen stehen im Hilfeblatt.
   const commands = [
-    { label: t('nav.help'), run: () => showHelpModal() },
-    { label: t('shortcuts.help'), run: () => showHelpModal() },
-    { label: t('nav.changelog'), run: () => showChangelogModal() },
   ];
   return paletteCommands(q, { places, settings, actions, commands });
 }
@@ -4190,10 +3639,6 @@ function navItems({ catalog = false } = {}) {
     { path: '/tasks',     label: t('nav.tasks'),     module: 'tasks',     section: NAV_SECTION.plan },
     { path: '/notes',     label: t('nav.notes'),     module: 'notes',     section: NAV_SECTION.plan },
     // Haushalt — Kitchen-Gruppe zuerst, dann die übrigen Haushalts-Module
-    { path: '/meals',     label: t('nav.meals'),     module: 'meals',    section: NAV_SECTION.household, kitchenGroup: true },
-    { path: '/recipes',   label: t('nav.recipes'),   module: 'recipes',  section: NAV_SECTION.household, kitchenGroup: true },
-    { path: '/shopping',  label: t('nav.shopping'),  module: 'shopping', section: NAV_SECTION.household, kitchenGroup: true },
-    { path: '/pantry',    label: t('nav.pantry'),    module: 'pantry',   section: NAV_SECTION.household, kitchenGroup: true },
     { path: '/documents', label: t('nav.documents'), module: 'documents',   section: NAV_SECTION.household },
     // Menschen
     { path: '/contacts',  label: t('nav.contacts'),  module: 'contacts',    section: NAV_SECTION.people },
@@ -4232,36 +3677,9 @@ function navCatalog() {
   return navItems({ catalog: true });
 }
 
-function currentKitchenDestination() {
-  const kitchenItems = navItems().filter((item) => item.kitchenGroup);
-  return kitchenItems.find((item) => item.path === getLastKitchenRoute()) ?? kitchenItems[0] ?? null;
-}
-
 function mobileNavigationCandidates() {
-  const candidates = [];
-  let kitchenAdded = false;
-
-  for (const item of navItems()) {
-    if (item.module === 'dashboard' || item.module === 'settings') continue;
-    if (item.kitchenGroup) {
-      if (!kitchenAdded) {
-        const kitchen = currentKitchenDestination();
-        if (kitchen) {
-          candidates.push({
-            ...kitchen,
-            label: t('nav.kitchen'),
-            icon: MODULE_ICON.kitchen,
-            navId: 'kitchen',
-          });
-        }
-        kitchenAdded = true;
-      }
-      continue;
-    }
-    candidates.push({ ...item, navId: item.module });
-  }
-
-  return candidates;
+  return navItems().filter((item) => item.module !== 'dashboard' && item.module !== 'settings')
+    .map((item) => ({ ...item, navId: item.module }));
 }
 
 function mobileFavoriteItems() {
@@ -4301,7 +3719,6 @@ function sidebarNavItems() {
   hover.setAttribute('aria-hidden', 'true');
   elements.push(hover);
 
-  let kitchenAdded = false;
   let currentSection = null;
   let currentGroup = null;
 
@@ -4351,13 +3768,6 @@ function sidebarNavItems() {
     // an die Sidebar-Spalte (siehe dort, und layout.css zum entfallenen Rand).
     if (item.module !== 'settings') startSection(item.section);
 
-    if (item.kitchenGroup) {
-      if (!kitchenAdded) {
-        appendNavEl(sidebarKitchenEl());
-        kitchenAdded = true;
-      }
-      return;
-    }
     const el = navItemEl(item);
     if (item.module === 'settings') {
       // Ans Sidebar-Ende pinnen — über eine explizite Klasse statt
@@ -4459,37 +3869,6 @@ function navItemEl({ path, navHref, label, icon, module: mod, accent, navId }) {
   return a;
 }
 
-function kitchenNavButtonEl() {
-  const kitchenBtn = document.createElement('button');
-  kitchenBtn.className = 'nav-item nav-item--kitchen';
-  kitchenBtn.id = 'kitchen-btn';
-  kitchenBtn.type = 'button';
-  kitchenBtn.dataset.navId = 'kitchen';
-  // Konstant: EIN Eintrag, EIN Akzent. Vorher folgte er dem aktiven Sub-Tab und
-  // wechselte orange → teal → pink → oliv, obwohl der Nutzer das Modul nicht
-  // verlassen hat (Critique 2026-07-29).
-  kitchenBtn.style.setProperty('--item-module-accent', 'var(--module-kitchen)');
-  kitchenBtn.setAttribute('aria-label', t('nav.kitchen'));
-  kitchenBtn.setAttribute('title', t('nav.kitchen'));
-
-  const iconWrap = document.createElement('div');
-  iconWrap.className = 'nav-item__icon-wrap';
-  const well = document.createElement('div');
-  well.className = 'nav-item__icon-well';
-  well.appendChild(moduleIconEl(MODULE_ICON.kitchen, 'nav-item__icon'));
-  iconWrap.appendChild(well);
-
-  const label = document.createElement('span');
-  label.className = 'nav-item__label';
-  label.textContent = t('nav.kitchen');
-  kitchenBtn.append(iconWrap, label);
-  kitchenBtn.addEventListener('click', () => {
-    const destination = currentKitchenDestination();
-    if (destination) navigate(destination.path);
-  });
-  return kitchenBtn;
-}
-
 function moreNavButtonEl() {
   const moreBtn = document.createElement('button');
   moreBtn.className = 'nav-item nav-item--more';
@@ -4524,7 +3903,7 @@ function moreNavButtonEl() {
 }
 
 function mobileDestinationEl(item) {
-  return item.navId === 'kitchen' ? kitchenNavButtonEl() : navItemEl(item);
+  return navItemEl(item);
 }
 
 function buildBottomNavItems(moreBtn = moreNavButtonEl()) {
@@ -4726,21 +4105,6 @@ function positionTabIndicator(instant = false) {
   }, instant);
 }
 
-function sidebarKitchenEl() {
-  const item = {
-    path: getLastKitchenRoute(),
-    label: t('nav.kitchen'),
-    icon: MODULE_ICON.kitchen,
-    module: navItems().find((n) => n.path === getLastKitchenRoute())?.module || 'meals',
-    navId: 'kitchen',
-  };
-  const a = navItemEl(item);
-  a.id = 'sidebar-kitchen-nav';
-  a.setAttribute('aria-label', kitchenNavAriaLabel(routerState.currentPath));
-  a.setAttribute('title', t('nav.kitchen'));
-  return a;
-}
-
 function moreItemEl({ path, navHref, label, icon, module: mod, accent, navId }) {
   const a = document.createElement('a');
   a.href = navHref ?? path;
@@ -4794,26 +4158,6 @@ function moreBadgeEl(count) {
   return badge;
 }
 
-function kitchenSectionLabel(path) {
-  const kitchenItems = navItems().filter((i) => i.kitchenGroup);
-  const targetRoute = isKitchenRoute(path) ? path : getLastKitchenRoute();
-  return kitchenItems.find((i) => i.path === targetRoute)?.label ?? t('nav.meals');
-}
-
-function kitchenNavAriaLabel(path) {
-  if (isKitchenRoute(path)) {
-    return t('nav.kitchenActiveLabel', { section: kitchenSectionLabel(path) });
-  }
-  // Inaktiv das Ziel offenlegen: der Küche-Tab führt zur zuletzt besuchten
-  // Sektion (Meals/Recipes/Shopping). Ohne diese Ansage ist für Screenreader-
-  // und Tastatur-Nutzer nicht vorhersagbar, wohin der Tab navigiert.
-  return t('nav.kitchenGoLabel', { section: kitchenSectionLabel(path) });
-}
-
-/**
- * Aktiven Nav-Link hervorheben und More-Button als aktiv markieren
- * wenn die aktive Route im More-Sheet liegt.
- */
 function setMoreButtonState(moreBtn, activeSecondary) {
   const inMoreSheet = !!activeSecondary;
   const moreLabel = activeSecondary
@@ -4839,7 +4183,7 @@ function setMoreButtonState(moreBtn, activeSecondary) {
 
   // Der Änderungsverlauf liegt auf Mobil im „Mehr"-Sheet: steht ein Update an,
   // muss der Name des Buttons das sagen - der Punkt daneben ist aria-hidden.
-  moreBtn.setAttribute('aria-label', withUpdateHint(moreLabel, pendingUpdateVersion()));
+  moreBtn.setAttribute('aria-label', moreLabel);
   moreBtn.setAttribute('title', t('nav.more'));
 
   const moreBtnLabel = moreBtn.querySelector('.nav-item__label');
@@ -4857,53 +4201,17 @@ function updateNav(rawPath, opts) {
   // /settings/personal/notifications fand "Mehr" dann kein Ziel und stand
   // ohne Aktivzustand da. Idempotent - ein schon gekuerzter Pfad bleibt.
   const path = topLevelSection(rawPath);
-  const kitchenDestination = currentKitchenDestination();
   document.querySelectorAll('[data-route]').forEach((el) => {
-    if (el.dataset.navId === 'kitchen' && kitchenDestination) {
-      el.dataset.route = kitchenDestination.path;
-      if (el.tagName === 'A') el.href = kitchenDestination.path;
-    }
     el.removeAttribute('aria-current');
-    const isActiveKitchenDestination = el.dataset.navId === 'kitchen' && isKitchenRoute(path);
-    if (el.dataset.route === path || isActiveKitchenDestination) {
+    if (el.dataset.route === path) {
       el.setAttribute('aria-current', 'page');
     }
   });
 
-  const kitchenNavBtn = document.querySelector('#kitchen-btn');
-  if (kitchenNavBtn) {
-    const isKitchen = isKitchenRoute(path);
-    kitchenNavBtn.classList.toggle('nav-item--active', isKitchen);
-    // Der Akzent ist konstant (--module-kitchen, in kitchenNavButtonEl gesetzt)
-    // und wird hier nicht mehr je aktivem Sub-Tab nachgezogen.
-    if (isKitchen) {
-      kitchenNavBtn.setAttribute('aria-current', 'page');
-    } else {
-      kitchenNavBtn.removeAttribute('aria-current');
-    }
-
-    const kitchenBtnLabel = kitchenNavBtn.querySelector('.nav-item__label');
-    if (kitchenBtnLabel) kitchenBtnLabel.textContent = t('nav.kitchen');
-    kitchenNavBtn.setAttribute('aria-label', kitchenNavAriaLabel(path));
-    kitchenNavBtn.setAttribute('title', t('nav.kitchen'));
-  }
-
-  const sidebarKitchenNav = document.querySelector('#sidebar-kitchen-nav');
-  if (sidebarKitchenNav) {
-    const isKitchen = isKitchenRoute(path);
-    if (isKitchen) {
-      sidebarKitchenNav.setAttribute('aria-current', 'page');
-    } else {
-      sidebarKitchenNav.removeAttribute('aria-current');
-    }
-    sidebarKitchenNav.setAttribute('aria-label', kitchenNavAriaLabel(path));
-    sidebarKitchenNav.setAttribute('title', t('nav.kitchen'));
-  }
-
   const moreBtn = document.querySelector('#more-btn');
   if (moreBtn) {
     const activeSecondary = secondaryMobileItems().find((item) => (
-      item.navId === 'kitchen' ? isKitchenRoute(path) : item.path === path
+      item.path === path
     ));
     setMoreButtonState(moreBtn, activeSecondary);
   }
@@ -5252,7 +4560,6 @@ function rebuildNavigation({ updateLabels = true } = {}) {
   updateBranding(routerState.currentPath || '/');
   // Die Einstiege zum Änderungsverlauf sind gerade neu entstanden - ein noch
   // offener Hinweis muss ihnen folgen, sonst fällt er beim Sprachwechsel weg.
-  applyUpdateBadge();
   // Aus demselben Grund die Zahlen an den Nav-Zielen: `replaceChildren()` oben
   // hat sie mit weggeworfen, und bis #868 kamen sie erst wieder, wenn das
   // zugehoerige Modul erneut rendert - nach einem Sprachwechsel also womoeglich

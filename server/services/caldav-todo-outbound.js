@@ -17,9 +17,9 @@
 // Ein Umzug zwischen Listen fehlt für AUFGABEN weiterhin bewusst: eine Aufgabe
 // gehört zu der Liste, aus der sie kam. Ein Einkaufsartikel kann seit #1700 die
 // Liste wechseln, und sein Objekt auf dem Server zieht MIT ("Mitnahme",
-// `moveShoppingMirror` und `processPendingShoppingMoves`):
+
 //
-//   Umzug   → shopping_items.outbound_move auf der Zeile selbst
+
 //
 // Die Zeile steht sofort auf der neuen Liste und zeigt weiter auf ihr Objekt
 // am alten Platz. Der Durchgang liest das Original dort, legt es unverändert
@@ -27,7 +27,7 @@
 // bucht die Zeile um und entfernt es ERST DANN am alten Platz. Was zwischen
 // diesen Schritten abbricht, führt ein späterer Durchgang zu Ende; an keiner
 // Stelle liegt das Objekt an keinem der beiden Plätze. Ist die Zielliste nicht
-// gespiegelt, ist der Umzug am Server ein Löschen (`releaseShoppingMirror`).
+
 //
 // Das Anlegen dagegen gibt es seit #695. Die alte Begründung ("ohne Zielwahl
 // gäbe es keine Liste, in die es gehörte") stimmte nicht mehr: die Zielwahl gibt
@@ -62,7 +62,7 @@ import {
 import { householdTimeZone, localToUTC } from '../utils/timezone.js';
 import { loadTags, tagsKey } from '../utils/task-tags.js';
 import { runSerialized } from '../utils/sync-lock.js';
-import { noteMoveTakenBack } from './shopping-move-notices.js';
+
 
 const log = createLogger('CalDAV-Todo-Outbound');
 
@@ -112,12 +112,7 @@ export const MODULES = {
     icsFields: icsFieldsForTask,
     labelOf: (row) => row.title,
   },
-  shopping: {
-    table: 'shopping_items',
-    mirrored: ['name', 'is_checked'],
-    icsFields: icsFieldsForShoppingItem,
-    labelOf: (row) => row.name,
-  },
+
 };
 
 function moduleDef(module) {
@@ -212,12 +207,7 @@ export function icsFieldsForTask(task, hadCompleted = false, tz = householdTimeZ
 }
 
 /** VTODO-Properties eines lokalen Einkaufspostens. */
-export function icsFieldsForShoppingItem(item, hadCompleted = false) {
-  return {
-    SUMMARY: item.name,
-    ...completionFields(!!item.is_checked, false, hadCompleted),
-  };
-}
+
 
 /** Trägt das Objekt bereits einen Erledigt-Zeitpunkt? */
 function hasCompleted(icsText) {
@@ -269,11 +259,7 @@ export function detachAccountRows(accountId) {
          SET external_source     = 'local',
              external_uid        = NULL,
              external_account_id = NULL,
-             external_object_url = NULL,${def.table === 'shopping_items' ? `
-             outbound_move          = 0,
-             outbound_move_attempts = 0,
-             outbound_move_since    = NULL,
-             outbound_move_by       = NULL,` : ''}
+             external_object_url = NULL,${''}
              outbound_dirty      = 0,
              outbound_attempts   = 0
        WHERE external_source = 'caldav' AND external_account_id = ?
@@ -326,85 +312,13 @@ export function queueTodoDeletion(module, row) {
  *
  * @returns {boolean} true, wenn ein Tombstone entstanden ist
  */
-export function releaseShoppingMirror(row) {
-  if (!row || row.external_source !== 'caldav') return false;
-  // Ohne Konto (gedriftete Datenbank) gibt es keinen Rückweg und nichts
-  // vorzumerken - entkoppelt wird trotzdem, sonst zeigte die Zeile auf der
-  // neuen Liste weiter auf ein Objekt der alten.
-  const queued = queueTodoDeletion('shopping', row);
-  db.get().prepare('DELETE FROM shopping_item_tags WHERE item_id = ?').run(row.id);
-  db.get().prepare(`
-    UPDATE shopping_items
-       SET external_source        = 'local',
-           external_uid           = NULL,
-           external_account_id    = NULL,
-           external_object_url    = NULL,
-           outbound_dirty         = 0,
-           outbound_attempts      = 0,
-           outbound_move          = 0,
-           outbound_move_attempts = 0,
-           outbound_move_since    = NULL,
-           outbound_move_by       = NULL
-     WHERE id = ?
-  `).run(row.id);
-  return queued;
-}
+
 
 /**
  * Die Server-Listen, denen diese Einkaufsliste zugeordnet ist - auch die
  * abgewählten. Abgewählt heisst "gerade nicht abgleichen", nicht "diese Liste
  * hat keinen Platz auf dem Server".
  */
-function shoppingMappingsOf(listId) {
-  return db.get().prepare(`
-    SELECT account_id, list_url, enabled FROM caldav_reminder_selection
-     WHERE target_module = 'shopping' AND target_list_id = ?
-  `).all(listId);
-}
-
-/**
- * Ein gespiegelter Einkaufsartikel wechselt die Liste (#1700). Zu rufen in der
- * Transaktion des Umzugs, mit der Zeile VOR dem Umzug.
- *
- *   - Die Zielliste ist einer Server-Liste zugeordnet: die Zeile bleibt Spiegel
- *     ihres Objekts und bekommt `outbound_move = 1`. Das Objekt zieht mit dem
- *     nächsten Durchgang nach (`processPendingShoppingMoves`), mit allem, was
- *     daran hängt - deshalb bleiben auch die gespiegelten Etiketten an der
- *     Zeile. Ist die Zuordnung abgewählt, wartet der Umzug, bis sie wieder
- *     eingeschaltet ist: abgewählt heisst nicht "nicht gespiegelt", und ein
- *     Löschen am Server wäre dann nicht rückholbar.
- *   - Das Objekt liegt schon in einer Server-Liste, die der Zielliste über
- *     dasselbe Konto zugeordnet ist (der Artikel zieht zurück, bevor sein
- *     Objekt nachgezogen ist): nichts ist zu tun, eine Vormerkung fällt.
- *     Führt ein ANDERES Konto dieselbe Server-Liste auf die Zielliste, fällt
- *     die Vormerkung im Durchgang (`carryShoppingItem`).
- *   - Die Zielliste ist nicht gespiegelt: `releaseShoppingMirror`.
- *
- * @returns {'none'|'carry'|'home'|'released'}
- */
-export function moveShoppingMirror(row, targetListId, movedBy = null) {
-  if (!row || row.external_source !== 'caldav') return 'none';
-  const from = collectionUrlOf(row.external_object_url);
-  const mappings = isMirrored(row) ? shoppingMappingsOf(targetListId) : [];
-  if (!mappings.length) {
-    releaseShoppingMirror(row);
-    return 'released';
-  }
-  const home = !!from && mappings.some(
-    (sel) => sel.account_id === row.external_account_id && sameCollection(sel.list_url, from)
-  );
-  // Der Beginn zählt für die Frist eines wartenden Umzugs (#1911); ein neuer
-  // Umzug beginnt sie neu. Wer verschoben hat, bekommt die Meldung, falls der
-  // Umzug zurückgeht (#1912).
-  db.get().prepare(`
-    UPDATE shopping_items
-       SET outbound_move = ?, outbound_move_attempts = 0,
-           outbound_move_since = CASE WHEN ? THEN NULL ELSE datetime('now') END,
-           outbound_move_by = ?
-     WHERE id = ?
-  `).run(home ? 0 : 1, home ? 1 : 0, home ? null : (movedBy ?? null), row.id);
-  return home ? 'home' : 'carry';
-}
 
 /** Merkt alle gespiegelten Einträge einer Auswahl vor (Mehrfachlöschungen). */
 export function queueTodoDeletions(module, rows) {
@@ -527,13 +441,7 @@ export function mirroredFieldsChanged(module, before, after) {
   return moduleDef(module).mirrored.some((f) => before?.[f] !== after?.[f]);
 }
 
-/**
- * Merkt eine lokale Bearbeitung für den Push vor.
- * @param {'tasks'|'shopping'} module
- * @param {object} before  Zeile vor der Änderung
- * @param {object} after   Zeile danach
- * @returns {boolean} true, wenn etwas aussteht
- */
+
 export function markTodoOutbound(module, before, after) {
   const def = moduleDef(module);
   if (!isMirrored(after)) return false;
@@ -635,7 +543,7 @@ function settleOutbound(module, sent) {
 
 /** Art eines Eintrags im UID-Namensraum (`server/utils/own-uid.js`). */
 function uidKind(module) {
-  return module === 'shopping' ? 'item' : 'task';
+  return 'task';
 }
 
 /**
@@ -656,43 +564,7 @@ export function todoUidFor(module, id) {
   return ownUid(uidKind(module), id, db.get());
 }
 
-/**
- * Macht eine lokale Zeile zum Spiegel ihres eigenen, schon auf dem Server
- * liegenden Uploads - der Inbound-Weg der Übernahme. Der Abruf sieht ein Objekt
- * mit der UID dieser Installation, dessen Zeile noch lokal ist: der PUT kam an,
- * die Antwort nicht. Ohne das legte der Abruf eine ZWEITE Zeile an.
- *
- * DIE UID KOMMT VOM SERVER UND IST KEIN AUSWEIS. Die Installationskennung
- * steht in jeder UID auf jedem Server, mit dem je synchronisiert wurde; wer
- * auf eine Collection schreiben darf, kann ein Objekt mit einer UID im Muster
- * dieser Installation und einer beliebigen Zeilen-Id hinlegen. Übernähme der
- * Abruf daraufhin einfach "die lokale Zeile mit dieser Id", würde eine fremde
- * Zeile - die private Aufgabe eines anderen Mitglieds, eine ohne jedes Ziel,
- * eine für ein anderes Konto - an dieses Konto gebunden, als geändert
- * vorgemerkt, und ihr Inhalt ginge mit dem nächsten Outbound auf diesen Server.
- *
- * Die UID benennt deshalb nur, WELCHE Zeile gemeint sein könnte. Ob sie
- * übernommen wird, entscheidet allein der lokale Stand: die Zeile muss genau
- * JETZT auf ihren Upload in genau DIESE Liste dieses Kontos warten - dieselbe
- * Auswahl, aus der der Upload selbst seine Zeilen nimmt (`pendingCreations`,
- * `pendingShoppingCreations`). Dann erfährt der Server nichts, was er nicht
- * ohnehin im selben Lauf per PUT bekäme. Alles andere bleibt ein gewöhnlicher
- * Import als neue Zeile; eine bestehende wird nicht angefasst.
- *
- * Endzustand wie nach dem 412 in `uploadNewTodo`: gespiegelt und als geändert
- * vorgemerkt, damit der lokale Stand hinaufgeht - über den Inhalt auf dem
- * Server wird nicht geraten, und er überschreibt hier nichts (Sichtbarkeit,
- * Zuweisung und alle Felder bleiben die lokalen).
- *
- * @param {string} module
- * @param {string} uid          UID aus dem Serverobjekt
- * @param {number} accountId    Konto, dessen Liste gerade abgerufen wird
- * @param {string} objectUrl    Adresse des Objekts laut Server
- * @param {{listUrl: string, targetListId?: number|null}} where
- *        die Liste, in der das Objekt liegt, und (Einkauf) die ihr zugeordnete
- *        Yuvomi-Liste
- * @returns {boolean} true, wenn eine Zeile übernommen wurde
- */
+
 export function adoptOwnUpload(module, uid, accountId, objectUrl, { listUrl, targetListId = null } = {}) {
   const def = moduleDef(module);
   const rowId = ownUploadRowId(uid, uidKind(module), db.get());
@@ -703,9 +575,7 @@ export function adoptOwnUpload(module, uid, accountId, objectUrl, { listUrl, tar
   // Adresse, die der Server frei gewählt hat.
   if (!sameCollection(collectionUrlOf(objectUrl) || '', listUrl)) return false;
 
-  const waitingHere = module === 'shopping'
-    ? !!targetListId && pendingShoppingCreations(targetListId, accountId).some((row) => row.id === rowId)
-    : pendingCreations(accountId, module).some(
+  const waitingHere = pendingCreations(accountId, module).some(
       (row) => row.id === rowId && sameCollection(row.target_caldav_list_url, listUrl)
     );
   if (!waitingHere) return false;
@@ -862,40 +732,14 @@ export function recurrenceFollowupTarget(task) {
  * @param {number} listId
  * @param {number|null} [accountId] das Konto, das hochladen würde
  */
-export function pendingShoppingCreations(listId, accountId = null) {
-  const rows = db.get().prepare(`
-    SELECT * FROM shopping_items
-     WHERE external_source = 'local'
-       AND list_id         = ?
-     ORDER BY id
-  `).all(listId);
-  // Mit Konto: ohne die Artikel, deren eigenes Objekt dort noch entfernt
-  // werden soll (`withoutOwnRemoval`). Wer nur zählt, ob überhaupt etwas
-  // wartet, fragt ohne.
-  return accountId == null ? rows : withoutOwnRemoval('shopping', accountId, rows);
-}
+
 
 /**
  * Konten, unter denen ein hier angelegter Einkaufsartikel auf seinen Upload
  * wartet (#831). Anders als eine Aufgabe merkt sich ein Artikel kein Ziel - die
  * offene Arbeit ist deshalb nur über die Listenzuordnung sichtbar.
  */
-function accountsWithPendingShoppingCreations() {
-  try {
-    return db.get().prepare(`
-      SELECT DISTINCT sel.account_id AS account_id
-        FROM caldav_reminder_selection sel
-        JOIN shopping_items i ON i.list_id = sel.target_list_id
-       WHERE sel.enabled = 1
-         AND sel.target_module = 'shopping'
-         AND sel.target_list_id IS NOT NULL
-         AND i.external_source = 'local'
-    `).all().map((r) => r.account_id).filter(Boolean);
-  } catch (err) {
-    log.warn(`Pending shopping creations are not readable (${err.message}); treating them as none.`);
-    return [];
-  }
-}
+
 
 /** Konten mit wartenden Uploads. */
 function accountsWithPendingCreations() {
@@ -976,21 +820,9 @@ async function uploadNewTodo(client, collection, module, row, accountId) {
   return bookTodoUpload(module, row, { uid, objectUrl, accountId, collectionUrl: collection.url, adopted });
 }
 
-/**
- * Wartet diese Zeile JETZT auf ihren Upload in genau diese Liste dieses Kontos
- * (#1881)? Dieselbe Frage, die die Upload-Schleifen vor der Anfrage stellen,
- * hier NACH ihr gestellt.
- *
- * Eine Aufgabe trägt ihr Ziel selbst. Ein Einkaufsartikel erbt es von der
- * Zuordnung seiner Yuvomi-Liste (`shoppingSelectionsOf`): er wartet hier,
- * solange die Liste, in der er JETZT liegt, dieser Server-Liste zugeordnet ist.
- */
+
 function waitsForUploadHere(module, now, accountId, collectionUrl) {
-  if (module === 'shopping') {
-    return shoppingSelectionsOf(accountId).some(
-      (sel) => sel.targetListId === now.list_id && sameCollection(sel.listUrl, collectionUrl)
-    );
-  }
+
   return now.target_caldav_account_id === accountId
     && !!now.target_caldav_list_url
     && sameCollection(now.target_caldav_list_url, collectionUrl)
@@ -1094,7 +926,7 @@ function listStillServes(module, accountId, listUrl) {
     'SELECT list_url, target_module FROM caldav_reminder_selection WHERE account_id = ?'
   ).all(accountId).filter((sel) => sameCollection(sel.list_url, listUrl));
   return !selected.length
-    || selected.some((sel) => (sel.target_module === 'shopping' ? 'shopping' : 'tasks') === module);
+    || selected.some((sel) => ('tasks') === module);
 }
 
 /**
@@ -1158,8 +990,8 @@ export function isUnbookedOwnUpload(module, uid, listUrl) {
   // wird deshalb immer auch nach Notizen der Art `item`; jede Notiz wird an
   // der Zeile IHRER Art gemessen.
   const parsed = parseOwnUid(uid);
-  const own = !!parsed && ['task', 'item'].includes(parsed.kind) && parsed.installation !== null;
-  const kinds = own && parsed.kind === 'task' ? ['task', 'item'] : ['item'];
+  const own = !!parsed && parsed.kind === 'task' && parsed.installation !== null;
+  const kinds = own ? ['task'] : [];
   moduleDef(module);
   let attempts;
   try {
@@ -1169,7 +1001,7 @@ export function isUnbookedOwnUpload(module, uid, listUrl) {
     return false;
   }
   return attempts.some(
-    (attempt) => todoAttemptState(attempt.kind === 'item' ? 'shopping' : 'tasks', attempt) !== 'mirrored'
+    (attempt) => todoAttemptState('tasks', attempt) !== 'mirrored'
   );
 }
 
@@ -1188,19 +1020,7 @@ export function isUnbookedOwnUpload(module, uid, listUrl) {
  * Dieselbe Frage wie dort an die Zeile, aus dem Stand von jetzt; Notizen der
  * Art `task` zählen nie.
  */
-export function leftoverHoldsCarriedItem(uid, listUrl) {
-  let attempts;
-  try {
-    attempts = uploadAttemptsAt({ source: 'caldav', kind: 'item', uid, collectionUrl: listUrl });
-  } catch (err) {
-    log.warn(`Upload notes are not readable (${err.message}); treating them as none.`);
-    return false;
-  }
-  return attempts.some((attempt) => {
-    const row = reloadRow('shopping', attempt.row_id);
-    return !!row && row.external_source === 'caldav' && row.external_uid === attempt.uid;
-  });
-}
+
 
 /**
  * Entfernt die Reste von Aufgaben- und Einkaufs-Uploads, deren Antwort nie
@@ -1235,13 +1055,13 @@ export function leftoverHoldsCarriedItem(uid, listUrl) {
 export function releaseLeftoverTodoUploads(client, accountId, { clientFor = null } = {}) {
   // Nur in Listen, die für dieses Konto eingeschaltet sind.
   const enabled = db.get().prepare(
-    'SELECT list_url FROM caldav_reminder_selection WHERE account_id = ? AND enabled = 1'
+    "SELECT list_url FROM caldav_reminder_selection WHERE account_id = ? AND enabled = 1 AND target_module = 'tasks'"
   ).all(accountId).map((r) => r.list_url);
   return removeLeftoverUploads(client, {
-    source: 'caldav', accountId, kinds: ['task', 'item'],
-    stateOf: (attempt) => todoAttemptState(attempt.kind === 'item' ? 'shopping' : 'tasks', attempt),
+    source: 'caldav', accountId, kinds: ['task'],
+    stateOf: (attempt) => todoAttemptState('tasks', attempt),
     inScope: (url) => enabled.some((known) => sameCollection(known, url)),
-    beforeRemove: (attempt) => confirmCarriedCopy(attempt, client, accountId, clientFor),
+
     // Die Zeile ist anderswo Spiegel DERSELBEN UID (nach einer Mitnahme, #1700,
     // oder einem Upload, der seinem Ziel gefolgt ist): der Rest liegt dann
     // unter einer UID, die der Abruf dieser Zeile zuordnet. Fiele die Notiz
@@ -1250,7 +1070,7 @@ export function releaseLeftoverTodoUploads(client, accountId, { clientFor = null
     // Liste, über zwei Konten entstünde ein zweiter Artikel. Die Notiz bleibt,
     // bis das Objekt fort ist oder nachweislich ein anderes.
     keepWhileRefused: (attempt) => {
-      const def = moduleDef(attempt.kind === 'item' ? 'shopping' : 'tasks');
+      const def = moduleDef('tasks');
       const now = db.get().prepare(
         `SELECT external_source, external_uid FROM ${def.table} WHERE id = ?`
       ).get(attempt.row_id);
@@ -1281,38 +1101,7 @@ export function releaseLeftoverTodoUploads(client, accountId, { clientFor = null
  * Nach dem Lesen wird die Zeile neu gelesen und in einem synchronen Schritt
  * geschrieben.
  */
-async function confirmCarriedCopy(attempt, client, accountId, clientFor) {
-  if (attempt.kind !== 'item') return true;
-  const mirrorElsewhere = (row) => !!row && row.external_source === 'caldav'
-    && row.external_uid === attempt.uid && !!row.external_object_url && !!row.external_account_id;
-  const row = reloadRow('shopping', attempt.row_id);
-  if (!mirrorElsewhere(row)) return true;
 
-  const place = collectionUrlOf(row.external_object_url);
-  const other = row.external_account_id === accountId
-    ? client
-    : (clientFor ? await clientFor(row.external_account_id) : null);
-  if (!place || !other) return false;
-  const copy = await inspectObjectAt(other, place, row.external_object_url, row.external_uid);
-  if (copy.own) return true;
-
-  return db.get().transaction(() => {
-    const now = reloadRow('shopping', attempt.row_id);
-    if (!mirrorElsewhere(now) || now.external_object_url !== row.external_object_url
-        || now.external_account_id !== row.external_account_id) return false;
-    db.get().prepare(
-      'UPDATE shopping_items SET external_account_id = ?, external_object_url = ? WHERE id = ?'
-    ).run(attempt.account_id, attempt.object_url, now.id);
-    settleUploadAttempt({
-      source: 'caldav', accountId: attempt.account_id, kind: 'item', rowId: now.id, collectionUrl: attempt.collection_url,
-    });
-    log.warn(
-      `Shopping item ${now.id} was carried to ${place}, but its entry is no longer there; `
-      + `the one at ${attempt.object_url} is kept and the item follows it.`
-    );
-    return false;
-  })();
-}
 
 /**
  * Das Objekt eines eigenen Uploads an dieser Adresse ist ab jetzt gewollt
@@ -1448,693 +1237,6 @@ export async function processPendingCreations(client, accountId, module, listsBy
  * @param {Array<{listUrl: string, targetListId: number}>} targets  aktive Zuordnungen
  * @param {Map}    listsByUrl  Listen-URL → Collection des Servers
  * @returns {Promise<number>} erfolgreich hochgeladene Artikel
- */
-export async function processPendingShoppingCreations(client, accountId, targets, listsByUrl) {
-  const gate = createUploadGate();
-  let done = 0;
-  for (const { listUrl, targetListId } of targets) {
-    if (!targetListId) continue;
-    const collection = listsByUrl.get(listUrl);
-    if (!collection) continue;
-
-    for (const row of pendingShoppingCreations(targetListId, accountId)) {
-      if (gate.isClosed(collection.url)) continue;
-      const fresh = reloadRow('shopping', row.id);
-      // Zwischenzeitlich gelöscht, schon gespiegelt oder in eine andere Liste
-      // gewandert (#1881): dann wartet er nicht mehr auf den Upload HIERHER.
-      if (!fresh || fresh.external_source !== 'local' || fresh.list_id !== targetListId) continue;
-
-      try {
-        const booked = await uploadNewTodo(client, collection, 'shopping', fresh, accountId);
-        if (booked === 'mirrored') done++;
-        else if (booked === null) log.error(`Could not build a VTODO for shopping item ${fresh.id}, keeping it local.`);
-      } catch (err) {
-        // Wie oben: bleibt lokal und läuft im nächsten Lauf wieder mit.
-        if (!gate.refused(collection.url, err)) {
-          log.warn(`Could not upload shopping item ${fresh.id} to ${listUrl}: ${err.message}`);
-        }
-      }
-    }
-  }
-  reportClosedLists(gate, 'shopping item(s)');
-  return done;
-}
-
-// --------------------------------------------------------
-// Mitnahme: das Objekt folgt seinem Artikel auf die neue Liste (#1700)
-// --------------------------------------------------------
-
-/** Einkaufsartikel dieser Liste, deren Objekt noch nachgezogen werden soll. */
-export function pendingShoppingMoves(listId) {
-  return db.get().prepare(`
-    SELECT * FROM shopping_items
-     WHERE external_source = 'caldav' AND outbound_move = 1 AND list_id = ?
-     ORDER BY id
-  `).all(listId);
-}
-
-/** Konten, in deren (eingeschaltete) Liste ein Objekt mitgenommen werden soll. */
-function accountsWithPendingShoppingMoves() {
-  try {
-    return db.get().prepare(`
-      SELECT DISTINCT sel.account_id AS account_id
-        FROM caldav_reminder_selection sel
-        JOIN shopping_items i ON i.list_id = sel.target_list_id
-       WHERE sel.enabled = 1
-         AND sel.target_module = 'shopping'
-         AND sel.target_list_id IS NOT NULL
-         AND i.external_source = 'caldav'
-         AND i.outbound_move = 1
-    `).all().map((r) => r.account_id).filter(Boolean);
-  } catch (err) {
-    log.warn(`Pending shopping moves are not readable (${err.message}); treating them as none.`);
-    return [];
-  }
-}
-
-/**
- * Umzüge dieses Kontos, deren Zielliste GAR KEINER Server-Liste mehr
- * zugeordnet ist (das Konto des Ziels wurde entfernt, die Zuordnung gelöscht):
- * die Mitnahme hat kein Ziel mehr und wartete sonst für immer, mit einem
- * Objekt, das am alten Platz weiterlebt. Der Artikel steht auf einer Liste
- * ohne Spiegel - dafür gilt dieselbe Regel wie beim Umzug dorthin
- * (`releaseShoppingMirror`). Eine nur ABGEWÄHLTE Zuordnung zählt nicht: sie
- * kann wieder eingeschaltet werden, der Umzug wartet.
- *
- * Synchron, vor dem Abruf des Kontos: der Löschauftrag verdeckt das Objekt
- * dann schon in diesem Lauf.
- *
- * @returns {number} gelöste Zeilen
- */
-export function releaseStrandedShoppingMoves(accountId) {
-  const rows = db.get().prepare(`
-    SELECT * FROM shopping_items
-     WHERE external_source = 'caldav' AND external_account_id = ? AND outbound_move = 1
-  `).all(accountId);
-  let released = 0;
-  for (const row of rows) {
-    if (shoppingMappingsOf(row.list_id).length) continue;
-    db.get().transaction(() => releaseShoppingMirror(row))();
-    released++;
-    log.info(`Shopping item ${row.id} was moved to a list that is no longer mirrored; its entry on the server is removed and the item stays in Yuvomi.`);
-  }
-  return released;
-}
-
-/**
- * Umzüge in Listen dieses Kontos, deren Server-Liste es NICHT MEHR GIBT: die
- * Auswahl des Kontos kennt sie, die Auflistung dieses Laufs nennt sie nicht.
- * Der Lauf schaltet eine solche Liste ab, und ein Umzug in eine abgeschaltete
- * wartet - ohne das hier für immer, mit einem Objekt, das am alten Platz
- * weiterlebt.
- *
- * Die Zeile geht auf die Liste ihres Objekts zurück (`returnShoppingMove`),
- * sie wird NICHT vom Server gelöst: dass es die Liste nicht mehr gibt, sagt
- * hier eine Auflistung des Servers, nicht der Nutzer, und ein Löschen am alten
- * Platz wäre nicht rückholbar. Hat die Zielliste noch eine andere Server-Liste,
- * die der Server nennt oder über die dieser Lauf nichts weiss (anderes Konto),
- * wartet der Umzug weiter.
- *
- * `listedUrls` ist die Auflistung DIESES Laufs und vom Aufrufer als nicht leer
- * befunden (wie `dropDeletionsOfMissingLists`).
- *
- * @returns {number} zurückgestellte Zeilen
- */
-export function returnMovesIntoMissingLists(accountId, listedUrls) {
-  const listed = [...(listedUrls || [])];
-  if (listed.length === 0) return 0;
-  const missing = (sel) => sel.account_id === accountId && !listed.some((url) => sameCollection(url, sel.list_url));
-  const targets = db.get().prepare(`
-    SELECT DISTINCT target_list_id FROM caldav_reminder_selection
-     WHERE account_id = ? AND target_module = 'shopping' AND target_list_id IS NOT NULL
-  `).all(accountId).map((r) => r.target_list_id);
-  let returned = 0;
-  for (const listId of targets) {
-    const mappings = shoppingMappingsOf(listId);
-    if (!mappings.length || !mappings.every(missing)) continue;
-    for (const row of pendingShoppingMoves(listId)) {
-      const back = returnShoppingMove(row, 'refused');
-      returned++;
-      log.warn(
-        `The reminder list that shopping item "${row.name}" (${row.id}) was moved to no longer exists on the server. `
-        + 'Its entry on the server was not touched'
-        + (back ? `, and the item is back on the list it came from (${back}).` : '.')
-      );
-    }
-  }
-  return returned;
-}
-
-/**
- * UIDs der Artikel dieses Kontos, deren Umzug wartet und deren Objekt in einer
- * Liste liegt, die dieser Lauf NICHT abgerufen hat (die Quelle ist abgewählt).
- * Für den Prune gelten sie als gesehen: er räumt ab, was der Server nicht mehr
- * führt, und über eine nicht gelesene Liste weiss der Lauf das nicht. Ohne das
- * nähme er die Zeile fort, sobald er eine ANDERE Liste des Kontos liest - der
- * Artikel steht ja auf einer eingeschalteten -, und mit ihr alles, was nur
- * hier steht. Liegt das Objekt in einer abgerufenen Liste und fehlte dort,
- * ist es wirklich fort: dann nennt diese Funktion es nicht.
- *
- * @param {string[]} fetchedListUrls  die Listen, die der Lauf gelesen hat
- */
-export function uidsOfMovesFromUnfetchedLists(accountId, fetchedListUrls) {
-  const fetched = [...(fetchedListUrls || [])];
-  return db.get().prepare(`
-    SELECT external_uid, external_object_url FROM shopping_items
-     WHERE external_source = 'caldav' AND external_account_id = ? AND outbound_move = 1
-       AND external_uid IS NOT NULL
-  `).all(accountId).filter((row) => {
-    const from = collectionUrlOf(row.external_object_url);
-    return !from || !fetched.some((url) => sameCollection(url, from));
-  }).map((row) => row.external_uid);
-}
-
-/** Wartet ein Umzug auf eine Liste dieses Kontos, die gerade nicht eingeschaltet ist? */
-export function movesWaitingForSelection(accountId) {
-  return db.get().prepare(`
-    SELECT COUNT(*) AS n
-      FROM caldav_reminder_selection sel
-      JOIN shopping_items i ON i.list_id = sel.target_list_id
-     WHERE sel.account_id = ? AND sel.enabled = 0 AND sel.target_module = 'shopping'
-       AND i.external_source = 'caldav' AND i.outbound_move = 1
-  `).get(accountId).n;
-}
-
-/**
- * So viele Tage wartet ein Umzug auf die Server-Liste seines Objekts, solange
- * sie nicht eingeschaltet ist (#1911). Danach geht der Artikel zurück
- * (`endWaitingShoppingMoves`).
- */
-export const SHOPPING_MOVE_WAIT_DAYS = 7;
-
-/**
- * Umzüge, deren Objekt in einer Server-Liste DIESES Kontos liegt. Ein Konto
- * ohne eingeschaltete Liste fragt der Lauf trotzdem, solange es solche gibt
- * (#1911): sonst kämen das Ende des Wartens und `releaseStrandedShoppingMoves`
- * dort nie an.
- */
-export function movesFromAccount(accountId) {
-  return db.get().prepare(`
-    SELECT COUNT(*) AS n FROM shopping_items
-     WHERE external_source = 'caldav' AND external_account_id = ? AND outbound_move = 1
-  `).get(accountId).n;
-}
-
-/**
- * Ein Umzug, der auf die Quelle wartet, bekommt ein Ende (#1911). Für die
- * Umzüge, deren Objekt in einer Server-Liste dieses Kontos liegt:
- *
- *   - Die Auflistung des Servers nennt die Quelle nicht mehr: mit der Liste
- *     ist ihr Eintrag fort, es gibt nichts mehr mitzunehmen. Der Artikel
- *     bleibt, wo der Nutzer ihn hingestellt hat, und wird dort als neuer
- *     Eintrag angelegt (`releaseShoppingMirror`, dann der Upload des Laufs).
- *     Zurück auf die alte Liste ginge er nicht: deren Objekt fehlt, und der
- *     Prune nähme die Zeile fort. Sofort, wie bei den Löschaufträgen
- *     (`dropDeletionsOfMissingLists`); der Auftrag für das alte Objekt fällt
- *     dort im nächsten Lauf, nennt der Server die Liste dann wieder, löscht er
- *     es - der Artikel ist umgezogen.
- *   - Die Quelle ist nicht (als Einkaufsliste) eingeschaltet, und der Umzug
- *     wartet länger als `SHOPPING_MOVE_WAIT_DAYS`: der Artikel geht auf die
- *     Liste seines Objekts zurück (`returnShoppingMove`), wie nach der
- *     fünften Absage des Ziels. Der Eintrag bleibt, wo der Server ihn führt.
- *
- * `listedUrls` ist die Auflistung DIESES Laufs für dieses Konto; leer heisst
- * "nichts gesagt" (#508), dann gilt nur die Frist.
- *
- * Synchron, vor dem Abruf des Kontos.
- *
- * @returns {{released: number, returned: number}}
- */
-export function endWaitingShoppingMoves(accountId, listedUrls) {
-  const listed = [...(listedUrls || [])];
-  const rows = db.get().prepare(`
-    SELECT *, outbound_move_since <= datetime('now', ?) AS overdue FROM shopping_items
-     WHERE external_source = 'caldav' AND external_account_id = ? AND outbound_move = 1
-     ORDER BY id
-  `).all(`-${SHOPPING_MOVE_WAIT_DAYS} days`, accountId);
-  let released = 0;
-  let returned = 0;
-  for (const { overdue, ...row } of rows) {
-    const from = collectionUrlOf(row.external_object_url);
-    if (!from) continue;
-    if (listed.length > 0 && !listed.some((url) => sameCollection(url, from))) {
-      db.get().transaction(() => releaseShoppingMirror(row))();
-      released++;
-      log.warn(
-        `The reminder list that shopping item "${row.name}" (${row.id}) was moved away from no longer exists on the server. `
-        + 'The item stays on the list it was moved to and is added there as a new entry.'
-      );
-      continue;
-    }
-    if (overdue !== 1 || listIsSelected(accountId, from)) continue;
-    const back = returnShoppingMove(row, 'waited');
-    returned++;
-    log.warn(
-      `Shopping item "${row.name}" (${row.id}) waited more than ${SHOPPING_MOVE_WAIT_DAYS} days for its reminder list ${from}, which is not selected. `
-      + 'Its entry on the server was not touched'
-      + (back ? `, and the item is back on the list it came from (${back}).` : '.')
-    );
-  }
-  return { released, returned };
-}
-
-/**
- * Soll das Objekt dieser Zeile JETZT an genau diesen Platz mitgenommen werden?
- * Die Zeile ist Spiegel, trägt die Vormerkung, und die Liste, in der sie steht,
- * ist dieser Server-Liste dieses Kontos zugeordnet und eingeschaltet.
- */
-function waitsForCarryHere(now, accountId, collectionUrl) {
-  return !!now && now.external_source === 'caldav' && now.outbound_move === 1
-    && waitsForUploadHere('shopping', now, accountId, collectionUrl);
-}
-
-/**
- * Ist diese Server-Liste für das Konto als EINKAUFSLISTE eingeschaltet? Eine
- * inzwischen den Aufgaben zugeordnete zählt nicht (#1911): ihr Objekt gehört
- * dann einer Aufgabe, und der Umzug darf es dort weder lesen noch entfernen.
- */
-function listIsSelected(accountId, listUrl) {
-  return db.get().prepare(`
-    SELECT list_url FROM caldav_reminder_selection
-     WHERE account_id = ? AND enabled = 1 AND target_module = 'shopping'
-  `).all(accountId).some((sel) => sameCollection(sel.list_url, listUrl));
-}
-
-/** Der Name des Objekts in seiner Collection, wie die Adresse ihn schreibt. */
-function objectNameOf(objectUrl) {
-  const url = String(objectUrl || '');
-  const name = url.slice(url.lastIndexOf('/') + 1);
-  return name && !/[?#]/.test(name) ? name : null;
-}
-
-function clearShoppingMove(id) {
-  db.get().prepare(
-    'UPDATE shopping_items SET outbound_move = 0, outbound_move_attempts = 0, outbound_move_since = NULL, outbound_move_by = NULL WHERE id = ?'
-  ).run(id);
-}
-
-/**
- * Das Ziel hat den Umzug endgültig nicht angenommen: die Zeile steht wieder
- * auf der Liste, in deren Server-Liste ihr Objekt liegt - dort, wo sie war.
- * Dieselbe Regel wie bei den Terminen (`clearOutboundMove`): die Vormerkung
- * fällt, das Objekt bleibt unangetastet, und der Eintrag bleibt, wo ihn der
- * Server führt. Gibt es die Zuordnung dieser Server-Liste nicht mehr, fällt
- * nur die Vormerkung; der nächste Abruf ordnet die Zeile wie jede andere.
- *
- * Geht die Zeile auf eine andere Liste zurück, bekommt die Person, die
- * verschoben hat, eine Meldung an der Glocke (#1912, `noteMoveTakenBack`).
- *
- * @param {'refused'|'waited'} reason  warum der Umzug zurückgeht
- * @returns {number|null} die Liste, auf die die Zeile zurückging
- */
-function returnShoppingMove(row, reason) {
-  const from = collectionUrlOf(row.external_object_url);
-  const home = from ? db.get().prepare(`
-    SELECT sel.list_url, sel.target_list_id FROM caldav_reminder_selection sel
-      JOIN shopping_lists l ON l.id = sel.target_list_id
-     WHERE sel.account_id = ? AND sel.target_module = 'shopping'
-  `).all(row.external_account_id).find((sel) => sameCollection(sel.list_url, from)) : null;
-
-  // `row` ist die eben gelesene Zeile: zwischen dem Lesen beim Aufrufer und
-  // hier liegt kein await.
-  const now = row;
-  return db.get().transaction(() => {
-    // Frisch gelesen: der Aufrufer kann eine Zeile ohne die Spalte halten.
-    const movedBy = db.get().prepare('SELECT outbound_move_by FROM shopping_items WHERE id = ?').get(now.id)?.outbound_move_by ?? null;
-    clearShoppingMove(now.id);
-    if (!home || home.target_list_id === now.list_id) return null;
-    noteMoveTakenBack(db.get(), { movedBy, itemId: now.id, itemName: now.name, backListId: home.target_list_id, targetListId: now.list_id, reason });
-    // Ans Ende der Kategorie dort, wie bei jedem Listenwechsel (Route).
-    db.get().prepare(`
-      UPDATE shopping_items SET list_id = ?, sort_order = COALESCE((
-        SELECT MAX(sort_order) FROM shopping_items WHERE list_id = ? AND category = ? AND id != ?
-      ), 0) + 1 WHERE id = ?
-    `).run(home.target_list_id, home.target_list_id, now.category, now.id, now.id);
-    return home.target_list_id;
-  })();
-}
-
-/**
- * Der Inhalt, der an den neuen Platz geht: das Original, Byte für Byte. Nur
- * wenn an der Zeile eine Bearbeitung auf ihren Push wartet, wird sie
- * eingearbeitet - durch denselben Patcher wie jede Änderung. Ohne wartende
- * Bearbeitung gilt der Stand des Servers, auch wenn er neuer ist als die
- * Zeile: der nächste Abruf holt ihn herein.
- */
-function carriedContent(row, originalData) {
-  if (!row.outbound_dirty) return originalData;
-  return patchICSTodo(
-    originalData, row.external_uid,
-    icsFieldsForShoppingItem(row, hasCompleted(originalData))
-  ) || originalData;
-}
-
-/**
- * Bucht eine Mitnahme - gegen den Stand von JETZT: zwischen `sent` und hier
- * lagen die Anfragen, und in der Zeit lief die App weiter.
- *
- *   - Die Zeile ist weg: die Löschroute hat ihr Objekt am ALTEN Platz
- *     vorgemerkt. Für das eben abgelegte steht die Notiz des Versuchs; die
- *     Zeile wartet dort nicht mehr, also wird es als Rest entfernt
- *     (`releaseLeftoverTodoUploads`).
- *   - Die Zeile ist nicht mehr dieser Spiegel, oder sie wartet nicht mehr auf
- *     die Mitnahme HIERHER (zurückgezogen, weitergezogen, auf eine Liste ohne
- *     Spiegel): nichts wird umgebucht, das abgelegte Objekt ist derselbe Rest.
- *   - Sonst: die Zeile zeigt ab jetzt auf das Objekt am neuen Platz, die
- *     Vormerkung fällt, und für den ALTEN Platz entsteht die Notiz, dass dort
- *     ein Objekt dieser Zeile liegt, das nicht mehr dorthin gehört. Eine
- *     Bearbeitung aus der Zwischenzeit bleibt vorgemerkt.
- *
- * Der alte Platz bekommt eine NOTIZ und keinen Löschauftrag: ein Auftrag trägt
- * je Konto und UID nur eine Adresse und verdeckt die UID im Abruf kontoweit -
- * nach einem Umzug innerhalb eines Kontos liegt dieselbe UID aber an zwei
- * Adressen, und nur die alte soll fort. Die Notiz gilt je Platz, und vor dem
- * Entfernen wird gelesen, was dort liegt.
- *
- * Synchron, ein Schreibvorgang.
- *
- * @returns {'carried'|'deleted'|'unchanged'|'released'}
- */
-function bookShoppingCarry(sent, { accountId, collectionUrl, objectUrl }) {
-  return db.get().transaction(() => {
-    const now = reloadRow('shopping', sent.id);
-    if (!now) return 'deleted';
-    if (now.external_source !== 'caldav' || now.external_uid !== sent.external_uid
-        || now.external_account_id !== sent.external_account_id
-        || now.external_object_url !== sent.external_object_url) return 'unchanged';
-    if (!waitsForCarryHere(now, accountId, collectionUrl)) return 'released';
-
-    const edited = changedSince('shopping', sent, now);
-    db.get().prepare(`
-      UPDATE shopping_items
-         SET external_account_id    = ?,
-             external_object_url    = ?,
-             outbound_move          = 0,
-             outbound_move_attempts = 0,
-             outbound_move_since    = NULL,
-             outbound_dirty         = ?,
-             outbound_attempts      = 0
-       WHERE id = ?
-    `).run(accountId, objectUrl, edited ? 1 : 0, now.id);
-    keepOwnUpload('shopping', now.external_uid, objectUrl);
-    settleUploadAttempt({ source: 'caldav', accountId, kind: 'item', rowId: now.id, collectionUrl });
-    noteUploadAttempt({
-      source: 'caldav', accountId: sent.external_account_id, kind: 'item', rowId: now.id,
-      collectionUrl: collectionUrlOf(sent.external_object_url),
-      uid: now.external_uid, objectUrl: sent.external_object_url,
-    });
-    return 'carried';
-  })();
-}
-
-/**
- * Entfernt das Original am alten Platz, gleich nach der Buchung - mit dem
- * ETag, unter dem es gelesen wurde. Passt er nicht mehr (412), hat eine andere
- * App das Objekt zwischen Lesen und Entfernen geändert: ihr Stand wird neu
- * gelesen und an den neuen Platz nachgetragen, bevor der alte fällt. Einmal;
- * was danach noch aussteht, bleibt an der Notiz des alten Platzes und geht mit
- * dem nächsten Durchgang (`releaseLeftoverTodoUploads`).
- */
-async function removeCarriedOriginal(source, target, { row, original, from, objectUrl, collectionUrl }) {
-  // `row` ist die Zeile, wie sie hinausging. War an ihr eine Bearbeitung
-  // vorgemerkt, steht sie im abgelegten Objekt - und die Buchung hat die
-  // Vormerkung danach abgeräumt. Das Nachtragen unten schreibt den neuen Platz
-  // noch einmal, mit dem neu gelesenen alten Objekt als Grundlage, und muss
-  // dieselbe Bearbeitung wieder einarbeiten: sonst stünde am neuen Platz der
-  // Name von vor der Bearbeitung, und der nächste Abruf trüge ihn in die Zeile.
-  const workedIn = !!row.outbound_dirty;
-  const place = { source: 'caldav', accountId: row.external_account_id, kind: 'item', rowId: row.id, collectionUrl: from };
-  const gone = (err) => err?.status === 404 || err?.status === 410;
-  try {
-    await source.deleteCalendarObject({ calendarObject: { url: row.external_object_url, etag: original.etag } });
-    settleUploadAttempt(place);
-    return;
-  } catch (err) {
-    if (gone(err)) { settleUploadAttempt(place); return; }
-    if (err?.status !== 412) {
-      log.warn(`Shopping item ${row.id} was carried to ${collectionUrl}, but its old object could not be removed (${err.message}); tried again on the next run.`);
-      return;
-    }
-  }
-
-  try {
-    const again = await inspectObjectAt(source, from, row.external_object_url, row.external_uid);
-    if (!again.own) {
-      // Fort, oder dort liegt inzwischen nachweislich etwas anderes.
-      if (again.foreign) settleUploadAttempt(place);
-      return;
-    }
-    const there = await inspectObjectAt(target, collectionUrl, objectUrl, row.external_uid);
-    // Nach den awaits: nur für die Zeile, die weiter an diesem Objekt hängt.
-    const now = reloadRow('shopping', row.id);
-    if (!there.own || !now || now.external_source !== 'caldav' || now.external_object_url !== objectUrl) return;
-    try {
-      await target.updateCalendarObject({
-        calendarObject: {
-          url: objectUrl,
-          etag: there.own.etag,
-          data: carriedContent({ ...now, outbound_dirty: workedIn || now.outbound_dirty ? 1 : 0 }, again.own.data),
-        },
-      });
-    } catch (err) {
-      // Ein Fehler am NEUEN Platz sagt nichts über den alten (#1911): auch
-      // ein 404 dort lässt die Notiz des alten stehen, sein Objekt ist dann
-      // womöglich das letzte (`confirmCarriedCopy`).
-      log.warn(`Shopping item ${row.id}: its old object changed while it was carried over, and the copy at ${objectUrl} could not be updated (${err.message}); tried again on the next run.`);
-      return;
-    }
-    await source.deleteCalendarObject({ calendarObject: { url: row.external_object_url, etag: again.own.etag } });
-    settleUploadAttempt(place);
-    log.info(`Shopping item ${row.id}: its old object was changed while it was carried over, carried the change along.`);
-  } catch (err) {
-    if (gone(err)) { settleUploadAttempt(place); return; }
-    log.warn(`Shopping item ${row.id}: its old object changed while it was carried over and could not be followed up (${err.message}); tried again on the next run.`);
-  }
-}
-
-/**
- * Nimmt das Objekt EINES umgezogenen Artikels an seinen neuen Platz mit.
- *
- * Reihenfolge, an der die Zusage hängt, dass nichts verloren geht:
- *
- *   1. Original am alten Platz LESEN (jetzt, nicht aus einem früheren Abruf).
- *   2. Am neuen Platz ABLEGEN, unter dem Namen, den es trug - vorher notiert
- *      (`noteUploadAttempt`): geht die Antwort verloren, verdeckt die Notiz das
- *      Objekt im Abruf, und der nächste Durchgang findet es vor (412).
- *      Liegt dort schon ein Objekt DIESER UID, wird es mit dem heutigen
- *      Original überschrieben; ein Objekt mit anderer UID bleibt unangetastet,
- *      und der Versuch gilt als Absage.
- *   3. BUCHEN (`bookShoppingCarry`), synchron.
- *   4. Am alten Platz ENTFERNEN (`removeCarriedOriginal`).
- *
- * Aus einer abgewählten Liste wird nichts gelesen und nichts entfernt: der
- * Umzug wartet, bis sie wieder eingeschaltet ist. Fehler beim Lesen der Quelle
- * zählen nicht - sie sagen nichts über das Ziel.
- *
- * @returns {Promise<'carried'|'waiting'|'dropped'|'deleted'|'unchanged'|'released'>}
- * @throws wenn das ZIEL die Ablage ablehnt
- */
-async function carryShoppingItem(client, accountId, collection, rowId, clientFor) {
-  const listed = reloadRow('shopping', rowId);
-  if (!waitsForCarryHere(listed, accountId, collection.url)) return 'waiting';
-
-  const from = collectionUrlOf(listed.external_object_url);
-  const name = objectNameOf(listed.external_object_url);
-  // Ohne Adresse (Bestand von vor #617) ist das Original nicht lesbar; der
-  // nächste volle Abruf trägt sie nach.
-  if (!from || !name || !listed.external_uid) return 'waiting';
-  // Das Objekt liegt schon in der Server-Liste des Ziels. Gefragt wird nach
-  // der ADRESSE, nicht nach dem Konto: zwei Konten können dieselbe Liste
-  // führen (einem zweiten Mitglied freigegeben), jedes auf eine eigene
-  // Einkaufsliste. Zwischen diesen beiden gibt es nichts mitzunehmen - es ist
-  // EIN Objekt, und wer es "am alten Platz" entfernte, entfernte es ganz.
-  // Die Vormerkung fällt; der nächste Abruf stellt die Zeile wieder auf die
-  // Liste, die ihr Konto dieser Server-Liste zuordnet.
-  if (sameCollection(from, collection.url)) {
-    clearShoppingMove(listed.id);
-    return 'dropped';
-  }
-  if (!listIsSelected(listed.external_account_id, from)) return 'waiting';
-
-  let source;
-  let original;
-  try {
-    source = listed.external_account_id === accountId ? client : await clientFor(listed.external_account_id);
-    if (!source) return 'waiting';
-    original = (await inspectObjectAt(source, from, listed.external_object_url, listed.external_uid)).own;
-  } catch (err) {
-    log.warn(`Could not read the object of shopping item ${listed.id} at ${listed.external_object_url} (${err.message}); its move waits.`);
-    return 'waiting';
-  }
-
-  // Nach den awaits: die Zeile von jetzt.
-  // Auch die Quelle von jetzt: wurde sie während des Lesens abgeschaltet,
-  // wartet der Umzug wie vorher (#1911).
-  const sent = reloadRow('shopping', rowId);
-  if (!waitsForCarryHere(sent, accountId, collection.url)
-      || sent.external_object_url !== listed.external_object_url
-      || sent.external_account_id !== listed.external_account_id
-      || !listIsSelected(sent.external_account_id, from)) return 'waiting';
-
-  if (!original) {
-    // Am alten Platz liegt das Objekt nicht (mehr): es gibt nichts mitzunehmen,
-    // und es wird nichts erfunden. Die Zeile bleibt Spiegel; der nächste Abruf
-    // findet ihr Objekt, wo der Server es führt, oder räumt sie ab.
-    clearShoppingMove(sent.id);
-    log.warn(`The object of shopping item ${sent.id} is no longer at ${sent.external_object_url}; its move to another list is dropped.`);
-    return 'dropped';
-  }
-
-  const objectUrl = `${String(collection.url).replace(/\/?$/, '/')}${name}`;
-  const data = carriedContent(sent, original.data);
-  noteUploadAttempt({
-    source: 'caldav', accountId, kind: 'item', rowId: sent.id,
-    collectionUrl: collection.url, uid: sent.external_uid, objectUrl,
-  });
-  try {
-    // Der Name geht als ein Pfadsegment hinaus: tsdav (ab 2.5.0) setzt das
-    // `./` selbst davor, damit ein Name mit Doppelpunkt nicht als eigene URL
-    // gelesen wird, und lehnt einen Namen mit `/` ab.
-    await client.createCalendarObject({ calendar: collection, filename: name, iCalString: data });
-  } catch (err) {
-    if (err?.status !== 412) throw err;
-    const there = await findObjectWithUid(client, collection.url, objectUrl, sent.external_uid);
-    if (!there) throw err;
-    await client.updateCalendarObject({ calendarObject: { url: objectUrl, etag: there.etag, data } });
-  }
-
-  const booked = bookShoppingCarry(sent, { accountId, collectionUrl: collection.url, objectUrl });
-  // Ist die Quelle inzwischen abgeschaltet, wird dort nichts entfernt: die
-  // Notiz des alten Platzes bleibt, und der Rest fällt, sobald sie wieder an
-  // ist (`releaseLeftoverTodoUploads`, #1911).
-  if (booked === 'carried' && listIsSelected(sent.external_account_id, from)) {
-    await removeCarriedOriginal(source, client, {
-      row: sent, original, from, objectUrl, collectionUrl: collection.url,
-    });
-  }
-  return booked;
-}
-
-/**
- * Nimmt die Objekte umgezogener Einkaufsartikel in die Listen dieses Kontos
- * mit (#1700). Aufgerufen für das Konto des ZIELS; die Quelle kann ein anderes
- * Konto sein (`clientFor`).
- *
- * EINE ABSAGE DES ZIELS ZÄHLT (`outbound_move_attempts`), anders als beim
- * Anlegen: ein hier angelegter Artikel hat nur diesen einen Platz und wartet
- * dort beliebig lange. Ein umgezogener hat ein Objekt, das am alten Platz
- * weiterlebt und dort von anderen Apps gesehen und geändert wird - der
- * Zwischenzustand darf nicht für immer stehen. Nach der fünften Absage steht
- * die Zeile wieder auf der Liste ihres Objekts (`returnShoppingMove`), wie ein
- * Termin, dessen Umzug der Server nicht annimmt.
- *
- * Gezählt wird nur, was über den EINTRAG selbst sagt (#2137): 400, 403, 409,
- * 412, 422, 423. Eine Absage, die das Konto oder den Server als Ganzes
- * betrifft (401, 429, 5xx), und ein Fehler ohne Status (Netzfehler) zählen
- * nicht - der Umzug bleibt stehen und verbraucht keinen Versuch, und der
- * Durchgang sendet für dieses Konto nichts mehr (`createRefusalStop`). Ein
- * 403 zählt trotzdem: ein nur lesbares Ziel ist genau der Fall, den
- * `returnShoppingMove` bewältigt, und einen Umzug gibt es zurück.
- *
- * @param {object} client      tsdav-Client des Zielkontos
- * @param {number} accountId
- * @param {Array<{listUrl: string, targetListId: number}>} targets  aktive Zuordnungen
- * @param {Map}    listsByUrl  Listen-URL → Collection des Servers
- * @param {{clientFor?: (accountId: number) => Promise<object|null>, stop?: ReturnType<typeof createRefusalStop>}} [opts]
- * @returns {Promise<number>} mitgenommene Objekte
- */
-export async function processPendingShoppingMoves(client, accountId, targets, listsByUrl, { clientFor, stop = createRefusalStop() } = {}) {
-  const sourceFor = clientFor || (async () => null);
-  let done = 0;
-  for (const { listUrl, targetListId } of targets) {
-    if (!targetListId) continue;
-    const collection = listsByUrl.get(listUrl);
-    if (!collection) continue;
-
-    // Nach einer kontoweiten Absage in diesem Durchgang: keine weitere
-    // Anfrage an das Konto (#1863, #2137).
-    if (stop.blocks(collection.url)) continue;
-
-    for (const listed of pendingShoppingMoves(targetListId)) {
-      // Nach einer kontoweiten Absage in diesem Durchgang: keine weitere
-      // Anfrage an das Konto (#2143).
-      if (stop.blocks(collection.url)) break;
-      try {
-        if (await carryShoppingItem(client, accountId, collection, listed.id, sourceFor) === 'carried') done++;
-      } catch (err) {
-        const now = reloadRow('shopping', listed.id);
-        if (!waitsForCarryHere(now, accountId, collection.url)) continue;
-
-        // Ein unerreichbarer Server ist keine Absage: er hat nicht geantwortet.
-        // Aber er ist nicht erreichbar - für weitere Artikel in diesem Durchgang
-        // auch nicht (#2143).
-        if (typeof err?.status !== 'number') {
-          stop.trip(err, collection.url);
-          log.warn(`Could not carry shopping item ${now.id} to ${listUrl}: ${err.message}`);
-          continue;
-        }
-
-        // Eine kontoweite Absage (401, 429, 5xx) sagt nichts über den Eintrag
-        // selbst (#2137): der Umzug bleibt stehen, verbraucht keinen Versuch,
-        // und der Durchgang sendet für dieses Konto nichts mehr. Ein 403 zählt
-        // trotzdem - ein nur lesbares Ziel ist genau der Fall, den
-        // `returnShoppingMove` bewältigt, und einen Umzug gibt es zurück.
-        if (isAccountWideRefusal(err) && err.status !== 403) {
-          stop.trip(err, collection.url);
-          log.warn(`Reminder list ${listUrl} refused shopping item ${now.id} for the whole account, its move waits without using up an attempt: ${err.message}`);
-          continue;
-        }
-
-        if (now.outbound_move_attempts + 1 >= MAX_OUTBOUND_ATTEMPTS) {
-          const back = returnShoppingMove(now, 'refused');
-          log.error(
-            `Giving up on moving shopping item "${now.name}" (${now.id}) to reminder list ${listUrl} after `
-            + `${now.outbound_move_attempts + 1} refusal(s): ${err.message}. Its entry on the server was not touched`
-            + (back ? `, and the item is back on the list it came from (${back}).` : '.')
-          );
-          continue;
-        }
-        db.get().prepare(
-          'UPDATE shopping_items SET outbound_move_attempts = outbound_move_attempts + 1 WHERE id = ?'
-        ).run(now.id);
-        log.warn(`Reminder list ${listUrl} refused shopping item ${now.id} (attempt ${now.outbound_move_attempts + 1}): ${err.message}`);
-      }
-    }
-  }
-  return done;
-}
-
-// --------------------------------------------------------
-// Ausführung
-// --------------------------------------------------------
-
-/**
- * Arbeitet vorgemerkte Löschungen ab.
- *
- * @param {object}  client       tsdav-Client
- * @param {number}  accountId
- * @param {string}  module
- * @param {Map}     objectIndex  UID → { url, etag, data }
- * @param {boolean} complete     true, wenn alle Listen dieses Kontos abgerufen
- *                               wurden. Nur dann ist "der Server führt das Objekt
- *                               nicht mehr" belegt und der Tombstone erledigt;
- *                               im Sofortversuch (nur einzelne Objekte geholt)
- *                               bleibt er sonst liegen.
- *
- * EIN AUFTRAG FÜR EINE ABGEWÄHLTE LISTE WARTET (#1884). Abschalten heisst
- * nicht aufräumen: solange die Liste abgewählt ist, geht dorthin kein DELETE,
- * weder im Lauf noch im Sofortversuch. Der Auftrag bleibt stehen, zählt keinen
- * Versuch und läuft, sobald die Liste wieder eingeschaltet ist; endgültig
- * fällt er, wenn es die Liste nicht mehr gibt (`dropDeletionsOfMissingLists`)
- * oder das Konto gelöscht wird. Führt der Abruf das Objekt inzwischen in einer
- * EINGESCHALTETEN Liste (auf einem anderen Gerät verschoben), wird es dort
- * gelöscht.
- *
- * `stop` (#1863): das Stoppsignal des Durchgangs (`createRefusalStop`). Nach
- * einer kontoweiten Absage geht keine weitere Anfrage an das Konto, die
- * Aufträge bleiben ohne Versuch. Der Aufrufer teilt es mit
- * `processPendingUpdates` und über die Module hinweg.
- * @returns {Promise<number>} erledigte Tombstones
  */
 export async function processPendingDeletions(client, accountId, module, objectIndex, complete = false, { stop = createRefusalStop() } = {}) {
   const rows = pendingDeletions(accountId, module);
@@ -2303,7 +1405,7 @@ function accountsWithPendingWork() {
   // Arbeit für den Sofortversuch: sonst baute jede Bearbeitung einen Client
   // für ein Konto auf, an das nichts geht.
   for (const row of db.get().prepare(
-    'SELECT account_id, module, object_url FROM caldav_todo_pending_deletions'
+    "SELECT account_id, module, object_url FROM caldav_todo_pending_deletions WHERE module = 'tasks'"
   ).all()) {
     if (row.object_url && inUnselectedList(row.account_id, row.object_url)) continue;
     add(row.account_id, row.module);
@@ -2317,8 +1419,8 @@ function accountsWithPendingWork() {
     }
   }
   for (const accountId of accountsWithPendingCreations()) add(accountId, 'tasks');
-  for (const accountId of accountsWithPendingShoppingCreations()) add(accountId, 'shopping');
-  for (const accountId of accountsWithPendingShoppingMoves()) add(accountId, 'shopping');
+
+
   return buckets;
 }
 
@@ -2333,7 +1435,7 @@ function accountsWithPendingWork() {
 async function taskListsOf(client, accountId) {
   const selected = db.get().prepare(`
     SELECT list_url FROM caldav_reminder_selection
-     WHERE account_id = ? AND enabled = 1 AND target_module = 'tasks'
+     WHERE account_id = ? AND enabled = 1 AND target_module = 'tasks' AND target_module = 'tasks'
   `).all(accountId).map((r) => r.list_url);
   if (!selected.length) return new Map();
 
@@ -2368,20 +1470,10 @@ async function listCollections(client) {
  * Zuordnung. Bewusst ohne Netzzugriff, damit der Aufrufer erst prüfen kann, ob
  * überhaupt etwas wartet - der Listenabruf ist der teure Teil.
  */
-function shoppingSelectionsOf(accountId) {
-  return db.get().prepare(`
-    SELECT list_url, target_list_id FROM caldav_reminder_selection
-     WHERE account_id = ? AND enabled = 1 AND target_module = 'shopping'
-       AND target_list_id IS NOT NULL
-  `).all(accountId).map((r) => ({ listUrl: r.list_url, targetListId: r.target_list_id }));
-}
+
 
 /** Collection-Objekte zu den Zuordnungen - ein Listenabruf. */
-async function collectionsForTargets(client, targets) {
-  const allowed   = new Set(targets.map((tgt) => tgt.listUrl));
-  const calendars = await listCollections(client);
-  return new Map((calendars || []).filter((c) => allowed.has(c.url)).map((c) => [c.url, c]));
-}
+
 
 /**
  * Holt gezielt die betroffenen Kalenderobjekte statt ganzer Listen - die
@@ -2485,25 +1577,7 @@ async function runFlushOutbound({ createClient } = {}) {
             client, accountId, module, await taskListsOf(client, accountId)
           );
         }
-        if (module === 'shopping') {
-          const selections = shoppingSelectionsOf(accountId);
-          const targets = selections
-            .filter((tgt) => pendingShoppingCreations(tgt.targetListId, accountId).length);
-          // Mitnahme umgezogener Artikel (#1700): dieselben Collections, ein
-          // Listenabruf für beides.
-          const moves = selections.filter((tgt) => pendingShoppingMoves(tgt.targetListId).length);
-          if (targets.length || moves.length) {
-            const collections = await collectionsForTargets(client, [...targets, ...moves]);
-            if (targets.length) {
-              total.created += await processPendingShoppingCreations(client, accountId, targets, collections);
-            }
-            if (moves.length) {
-              // Als `updated` gezählt: das Objekt ist dasselbe, nur sein Platz nicht.
-              // Dasselbe Stoppsignal wie Löschen und Ändern (#1863, #2137).
-              total.updated += await processPendingShoppingMoves(client, accountId, moves, collections, { clientFor, stop });
-            }
-          }
-        }
+
       }
     } catch (err) {
       log.warn(`[Account ${accountId}] Immediate outbound attempt failed: ${err.message}`);

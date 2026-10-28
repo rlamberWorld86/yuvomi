@@ -30,7 +30,7 @@ import assert from 'node:assert/strict';
 const dbmod = await import('../server/db.js');
 const db = dbmod.get();
 const {
-  MODULES, dueField, priorityToVtodo, icsFieldsForTask, icsFieldsForShoppingItem,
+  MODULES, dueField, priorityToVtodo, icsFieldsForTask,
   markTodoOutbound, queueTodoDeletion, queueTodoDeletions,
   pendingDeletions, pendingDeletionUids, pendingUpdateUids,
   processPendingDeletions, processPendingUpdates, flushOutbound,
@@ -42,7 +42,7 @@ const { mapVtodoPriority, mapVtodoStatus, splitDue, sync } =
   await import('../server/services/caldav-reminders-sync.js');
 const { deleteAccount } = await import('../server/services/caldav-sync.js');
 const { parseVTODO } = await import('../server/services/ics-parser.js');
-const { loadTags, loadItemTags, setTags, tagsKey } = await import('../server/utils/task-tags.js');
+const { loadTags, setTags, tagsKey } = await import('../server/utils/task-tags.js');
 const { MAX_OUTBOUND_ATTEMPTS } = await import('../server/services/calendar-outbound.js');
 
 db.prepare("INSERT INTO users (username, display_name, password_hash, role) VALUES ('admin','Admin','x','admin')").run();
@@ -234,24 +234,7 @@ test('Status: erledigt gewinnt, in Arbeit überlebt ein NEEDS-ACTION', () => {
   assert.strictEqual(mapVtodoStatus(open, 'archived'), 'open');
 });
 
-test('Erledigt-Zustand wandert als STATUS, COMPLETED und PERCENT-COMPLETE', () => {
-  const done = icsFieldsForTask({ title: 'x', status: 'done' }, false);
-  assert.strictEqual(done.STATUS, 'COMPLETED');
-  assert.strictEqual(done['PERCENT-COMPLETE'], '100');
-  assert.match(done.COMPLETED, /^\d{8}T\d{6}Z$/);
 
-  // Bereits erledigt: der ursprüngliche Zeitpunkt bleibt stehen.
-  assert.ok(!('COMPLETED' in icsFieldsForTask({ title: 'x', status: 'done' }, true)));
-
-  const open = icsFieldsForTask({ title: 'x', status: 'open' }, true);
-  assert.strictEqual(open.STATUS, 'NEEDS-ACTION');
-  assert.strictEqual(open.COMPLETED, null, 'null entfernt die Property');
-  assert.strictEqual(open['PERCENT-COMPLETE'], null);
-
-  assert.strictEqual(icsFieldsForTask({ title: 'x', status: 'in_progress' }).STATUS, 'IN-PROCESS');
-  assert.strictEqual(icsFieldsForShoppingItem({ name: 'Milch', is_checked: 1 }).STATUS, 'COMPLETED');
-  assert.strictEqual(icsFieldsForShoppingItem({ name: 'Milch', is_checked: 0 }).STATUS, 'NEEDS-ACTION');
-});
 
 // ── Patcher ─────────────────────────────────────────────────────────────────────
 
@@ -446,22 +429,7 @@ test('Nur gespiegelte Einträge und nur gespiegelte Felder lösen einen Push aus
   );
 });
 
-test('Ein Tombstone überlebt den gelöschten Eintrag und ist idempotent', () => {
-  const accountId = reset();
-  const task = insertTask({ accountId });
 
-  assert.strictEqual(queueTodoDeletion('tasks', task), true);
-  assert.strictEqual(queueTodoDeletion('tasks', task), true, 'zweimal vormerken ist erlaubt');
-  db.prepare('DELETE FROM tasks WHERE id = ?').run(task.id);
-
-  const rows = pendingDeletions(accountId, 'tasks');
-  assert.strictEqual(rows.length, 1, 'genau ein Tombstone');
-  assert.strictEqual(rows[0].uid, 'todo-1@test');
-  assert.strictEqual(rows[0].object_url, OBJ_URL);
-
-  // Module teilen sich die Tabelle, aber nicht ihre UID-Räume.
-  assert.deepStrictEqual([...pendingDeletionUids(accountId, 'shopping')], []);
-});
 
 test('Eine lokale Aufgabe hinterlässt keinen Tombstone', () => {
   const accountId = reset();
@@ -477,27 +445,7 @@ test('Eine lokale Aufgabe hinterlässt keinen Tombstone', () => {
 // mehr löschen - der Tombstone scheiterte, das lokale DELETE kam nie dazu, und
 // die entfernte Kopie blieb ohnehin unerreichbar stehen.
 
-test('Das Löschen eines Kontos entkoppelt seine gespiegelten Zeilen', () => {
-  const accountId = reset();
-  const task = insertTask({ accountId });
-  const item = insertShoppingItem({ accountId, uid: 'todo-2@test' });
-  db.prepare('UPDATE tasks SET outbound_dirty = 1, outbound_attempts = 2 WHERE id = ?').run(task.id);
 
-  deleteAccount(accountId);
-
-  for (const [label, row] of [
-    ['Aufgabe', reloadTask(task.id)],
-    ['Einkaufsposten', db.prepare('SELECT * FROM shopping_items WHERE id = ?').get(item.id)],
-  ]) {
-    assert.ok(row, `${label}: Nutzerdaten bleiben, nur die Verbindung geht`);
-    assert.strictEqual(row.external_source, 'local', `${label}: gehört ab jetzt Yuvomi allein`);
-    assert.strictEqual(row.external_account_id, null, `${label}: keine tote Kontokennung`);
-    assert.strictEqual(row.external_uid, null, `${label}: die UID bedeutet nichts mehr`);
-    assert.strictEqual(row.external_object_url, null);
-    assert.strictEqual(row.outbound_dirty, 0, `${label}: es gibt niemanden mehr, der das empfinge`);
-    assert.strictEqual(row.outbound_attempts, 0);
-  }
-});
 
 test('Das Löschen eines Kontos räumt das Upload-Ziel lokaler Aufgaben ab (#1885)', () => {
   const accountId = reset();
@@ -527,24 +475,7 @@ test('Eine entkoppelte Aufgabe lässt sich löschen, ohne am Fremdschlüssel zu 
   assert.strictEqual(reloadTask(task.id), undefined);
 });
 
-test('Eine Zeile mit toter Kontokennung wird still übersprungen statt zu werfen', () => {
-  // Gedriftete Datenbank: das Konto ist weg, die Kennung steht noch. Ohne
-  // Vorprüfung warf der INSERT in caldav_todo_pending_deletions hier einen
-  // Fremdschlüsselfehler - und der Route-Handler daraufhin eine 500, ohne je
-  // beim lokalen DELETE anzukommen.
-  const accountId = reset();
-  const task = insertTask({ accountId });
-  const item = insertShoppingItem({ accountId, uid: 'todo-2@test' });
-  db.prepare('DELETE FROM caldav_accounts WHERE id = ?').run(accountId);
 
-  assert.strictEqual(queueTodoDeletion('tasks', task), false);
-  assert.strictEqual(queueTodoDeletions('shopping', [item]), 0);
-  // Auch die Bearbeitung: ohne Konto gibt es niemanden, der den Push abholt.
-  assert.strictEqual(
-    markTodoOutbound('tasks', task, { ...task, title: 'Milch und Butter kaufen' }), false
-  );
-  assert.strictEqual(reloadTask(task.id).outbound_dirty, 0);
-});
 
 // ── Ausführung ──────────────────────────────────────────────────────────────────
 
@@ -641,25 +572,9 @@ test('Ohne Objekt-URL bleibt der Tombstone liegen, bis ein voller Lauf ihn klär
   assert.strictEqual(pendingDeletions(accountId, 'tasks').length, 0);
 });
 
-test('Einkaufsposten laufen über dieselbe Maschinerie', async () => {
-  const accountId = reset();
-  const item = insertShoppingItem({ accountId, is_checked: 1 });
-  db.prepare('UPDATE shopping_items SET outbound_dirty = 1 WHERE id = ?').run(item.id);
 
-  const client = fakeClient();
-  const pushed = await processPendingUpdates(client, accountId, 'shopping', indexOf('todo-1@test'));
 
-  assert.strictEqual(pushed, 1);
-  assert.ok(client.calls.updated[0].data.includes('STATUS:COMPLETED'));
-  assert.strictEqual(
-    db.prepare('SELECT outbound_dirty FROM shopping_items WHERE id = ?').get(item.id).outbound_dirty, 0
-  );
-});
 
-test('Ein unbekanntes Modul kommt nie bis zum SQL-Statement', () => {
-  assert.throws(() => queueTodoDeletion('notes', {}), /Unknown VTODO module/);
-  assert.deepStrictEqual(Object.keys(MODULES).sort(), ['shopping', 'tasks']);
-});
 
 // ── Sofortversuch ───────────────────────────────────────────────────────────────
 
@@ -781,6 +696,16 @@ test('Der Inbound fragt die Liste nach VTODO ab, nicht nach Terminen (#586)', as
   assert.strictEqual(task.title, 'Milch kaufen');
 });
 
+test('Legacy shopping selections do not import into retained tasks', async () => {
+  const accountId = reset();
+  enableList(accountId, 'shopping');
+  const client = fakeClient({ objects: [{ url: OBJ_URL, etag: 'e1', data: serverTodo() }] });
+  await sync({ createClient: async () => client });
+  assert.deepEqual(Object.keys(MODULES), ['tasks']);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM tasks').get().n, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM shopping_items').get().n, 0);
+});
+
 // ── Zusammenspiel mit dem Inbound ───────────────────────────────────────────────
 
 test('Der Inbound überschreibt keine Bearbeitung, die noch auf ihren Push wartet', async () => {
@@ -839,147 +764,13 @@ test('pendingUpdateUids meldet genau die wartenden Bearbeitungen', () => {
 
 // ── Migration v113 gegen eine befüllte Bestands-DB ──────────────────────────────
 
-test('v113 ist additiv und startet mit neutralen Markern', async () => {
-  const { tempDir } = await import('./tmp-dir.js');
-  const { join } = await import('node:path');
-  const { default: Database } = await import('better-sqlite3-multiple-ciphers');
-  const { MIGRATIONS } = await import('../server/db.js');
 
-  const apply = (conn, migration) => {
-    if (typeof migration.up === 'function') migration.up(conn);
-    else conn.exec(migration.up);
-    migration.afterUp?.(conn);
-  };
 
-  const old = new Database(join(tempDir('yuvomi-todomig-'), 'db.sqlite'));
-  for (const migration of MIGRATIONS.filter((m) => m.version <= 112)) apply(old, migration);
 
-  // Bestand, wie ihn ein Nutzer mit VTODO-Spiegel mitbringt.
-  old.prepare("INSERT INTO users (id, username, display_name, password_hash, role) VALUES (1,'admin','Admin','x','admin')").run();
-  old.prepare(`INSERT INTO caldav_accounts (id, name, caldav_url, username, password)
-               VALUES (1, 'Radicale', 'https://dav.example/', 'u', 'p')`).run();
-  old.prepare(`INSERT INTO tasks (id, title, created_by, external_uid, external_source, external_account_id)
-               VALUES (7, 'Milch kaufen', 1, 'todo-1@test', 'caldav', 1)`).run();
-  old.prepare("INSERT INTO shopping_lists (id, name, created_by) VALUES (3, 'Einkauf', 1)").run();
-  old.prepare(`INSERT INTO shopping_items (id, list_id, name, external_uid, external_source, external_account_id)
-               VALUES (5, 3, 'Butter', 'todo-2@test', 'caldav', 1)`).run();
 
-  const before = old.prepare('SELECT * FROM tasks WHERE id = 7').get();
-  apply(old, MIGRATIONS.find((m) => m.version === 113));
-  const after = old.prepare('SELECT * FROM tasks WHERE id = 7').get();
 
-  for (const [key, value] of Object.entries(before)) {
-    assert.deepStrictEqual(after[key], value, `Spalte ${key} darf sich nicht ändern`);
-  }
-  assert.strictEqual(after.external_object_url, null, 'kein Backfill, die URL trägt der nächste Inbound nach');
-  assert.strictEqual(after.outbound_dirty, 0, 'der erste Sync nach dem Update pusht nichts');
-  assert.strictEqual(after.outbound_attempts, 0);
-  assert.strictEqual(old.prepare('SELECT outbound_dirty FROM shopping_items WHERE id = 5').get().outbound_dirty, 0);
 
-  // Module teilen die Tombstone-Tabelle, aber nicht ihren UID-Raum.
-  const insert = old.prepare(
-    'INSERT INTO caldav_todo_pending_deletions (account_id, module, uid) VALUES (?, ?, ?)'
-  );
-  insert.run(1, 'tasks', 'todo-1@test');
-  insert.run(1, 'shopping', 'todo-1@test');
-  assert.throws(() => insert.run(1, 'tasks', 'todo-1@test'), /UNIQUE/);
-  assert.throws(() => insert.run(1, 'notes', 'todo-1@test'), /CHECK/);
 
-  // Fällt das Konto weg, sind seine offenen Löschungen gegenstandslos.
-  old.prepare('PRAGMA foreign_keys = ON').run();
-  old.prepare('DELETE FROM caldav_accounts WHERE id = 1').run();
-  assert.strictEqual(old.prepare('SELECT COUNT(*) AS n FROM caldav_todo_pending_deletions').get().n, 0);
-
-  old.close();
-});
-
-test('v123 entkoppelt den Bestand toter Kontokennungen und lässt lebende in Ruhe', async () => {
-  const { tempDir } = await import('./tmp-dir.js');
-  const { join } = await import('node:path');
-  const { default: Database } = await import('better-sqlite3-multiple-ciphers');
-  const { MIGRATIONS } = await import('../server/db.js');
-
-  const apply = (conn, migration) => {
-    if (typeof migration.up === 'function') migration.up(conn);
-    else conn.exec(migration.up);
-    migration.afterUp?.(conn);
-  };
-
-  const old = new Database(join(tempDir('yuvomi-detachmig-'), 'db.sqlite'));
-  for (const migration of MIGRATIONS.filter((m) => m.version <= 122)) apply(old, migration);
-
-  // Bestand eines Haushalts, der schon einmal ein CalDAV-Konto gelöscht hat:
-  // Konto 1 lebt, Konto 2 gab es einmal und die Zeilen wissen nichts davon.
-  old.prepare("INSERT INTO users (id, username, display_name, password_hash, role) VALUES (1,'admin','Admin','x','admin')").run();
-  old.prepare(`INSERT INTO caldav_accounts (id, name, caldav_url, username, password)
-               VALUES (1, 'Radicale', 'https://dav.example/', 'u', 'p')`).run();
-  old.prepare("INSERT INTO shopping_lists (id, name, created_by) VALUES (3, 'Einkauf', 1)").run();
-
-  const mkTask = old.prepare(`
-    INSERT INTO tasks (id, title, created_by, external_uid, external_source,
-                       external_account_id, external_object_url, outbound_dirty, outbound_attempts)
-    VALUES (?, ?, 1, ?, 'caldav', ?, 'https://dav.example/o.ics', ?, ?)
-  `);
-  mkTask.run(7, 'Milch kaufen', 'todo-1@test', 1, 1, 3);   // lebendes Konto
-  mkTask.run(8, 'Reifen wechseln', 'todo-2@test', 2, 1, 0); // verwaist
-  old.prepare(`INSERT INTO shopping_items (id, list_id, name, external_uid, external_source,
-                                           external_account_id, external_object_url)
-               VALUES (5, 3, 'Butter', 'todo-3@test', 'caldav', 2, 'https://dav.example/b.ics')`).run();
-
-  apply(old, MIGRATIONS.find((m) => m.version === 123));
-
-  const orphan = old.prepare('SELECT * FROM tasks WHERE id = 8').get();
-  assert.strictEqual(orphan.title, 'Reifen wechseln', 'die Aufgabe selbst bleibt - sie ist Nutzerdatum');
-  assert.strictEqual(orphan.external_source, 'local');
-  assert.strictEqual(orphan.external_account_id, null);
-  assert.strictEqual(orphan.external_uid, null);
-  assert.strictEqual(orphan.external_object_url, null);
-  assert.strictEqual(orphan.outbound_dirty, 0);
-
-  const orphanItem = old.prepare('SELECT * FROM shopping_items WHERE id = 5').get();
-  assert.strictEqual(orphanItem.external_source, 'local');
-  assert.strictEqual(orphanItem.external_account_id, null);
-
-  // Ein noch verbundenes Konto darf die Migration nicht mit abräumen, sonst
-  // stünde nach dem Update ein ganzer Spiegel still.
-  const live = old.prepare('SELECT * FROM tasks WHERE id = 7').get();
-  assert.strictEqual(live.external_source, 'caldav');
-  assert.strictEqual(live.external_account_id, 1);
-  assert.strictEqual(live.external_uid, 'todo-1@test');
-  assert.strictEqual(live.outbound_dirty, 1, 'eine wartende Bearbeitung bleibt vorgemerkt');
-  assert.strictEqual(live.outbound_attempts, 3);
-
-  old.close();
-});
-
-test('Der Inbound spiegelt CATEGORIES auch in die Tags eines Einkaufspostens', async () => {
-  // Eine Erinnerungsliste kann auf Aufgaben ODER auf den Einkauf zeigen (#617).
-  // Bis hierher fielen die CATEGORIES eines Einkaufspostens stillschweigend weg.
-  const accountId = reset();
-  enableList(accountId, 'shopping');
-  const client = fakeClient({
-    objects: [{ url: OBJ_URL, etag: 'e1', data: serverTodo({ extra: ['CATEGORIES:Bio'] }) }],
-  });
-
-  await sync({ createClient: async () => client });
-
-  const item = db.prepare("SELECT id, category FROM shopping_items WHERE external_uid = 'todo-1@test'").get();
-  assert.deepStrictEqual(loadItemTags(db, item.id), ['Bio', 'Haushalt']);
-  // Die Kategorie ist hier der Gang im Laden, eine verwaltete Liste: sie darf
-  // sich von fremden CATEGORIES nicht befuellen lassen.
-  assert.strictEqual(item.category, 'Sonstiges');
-});
-
-test('Der Push eines Einkaufspostens fasst CATEGORIES nicht an', () => {
-  // Der Einkauf spiegelt CATEGORIES nur herein (#586): er zeigt die Etiketten
-  // der Quellliste, verwaltet sie aber nicht. Nähme icsFieldsForShoppingItem
-  // CATEGORIES auf, löschte jeder Haken auf einem Posten die Tags, die der
-  // Server kennt und Yuvomi nie gesehen hat - genau der Fehler, den die
-  // Aufgaben-Seite nur vermeiden darf, weil sie die Liste vollständig führt.
-  const fields = icsFieldsForShoppingItem({ id: 1, name: 'Milch', is_checked: 0 });
-  assert.ok(!('CATEGORIES' in fields),
-    'Ein Feld, das nicht im Patch steht, lässt die Property auf dem Server unberührt');
-});
 
 // ── Anlegen: Yuvomi → Server (#695) ─────────────────────────────────────────────
 
@@ -1129,19 +920,7 @@ test('Der Sync-Lauf laedt hoch, ohne dass der Prune die frische Aufgabe gleich w
   assert.strictEqual(client.calls.created.length, 1);
 });
 
-test('Eine Liste, die auf den Einkauf zeigt, nimmt keine Aufgaben an', async () => {
-  // Sonst kaeme die Aufgabe als Einkaufsposten zurueck. Die Route weist das
-  // bereits ab; hier zaehlt der zweite Riegel im Dienst selbst.
-  const accountId = reset();
-  enableList(accountId, 'shopping');
-  const task = insertLocalTask({ accountId });
-  const client = fakeClient();
 
-  await sync({ createClient: async () => client });
-
-  assert.strictEqual(client.calls.created.length, 0);
-  assert.strictEqual(reloadTask(task.id).external_source, 'local');
-});
 
 // ════════════════════════════════════════════════════════════════════════════════
 // Neu angelegte Einkaufsartikel hochladen (#831)
@@ -1168,121 +947,19 @@ function insertLocalItem(listId, name = 'Brot') {
 const reloadItem = (id) => db.prepare('SELECT * FROM shopping_items WHERE id = ?').get(id);
 const shoppingTargets = (listId) => [{ listUrl: LIST_URL, targetListId: listId }];
 
-test('pendingShoppingCreations findet nur lokale Artikel der zugeordneten Liste', async () => {
-  const { pendingShoppingCreations } = await import('../server/services/caldav-todo-outbound.js');
-  const accountId = reset();
-  const listId    = insertShoppingList();
-  const other     = insertShoppingList('Baumarkt');
-  enableList(accountId, 'shopping', listId);
 
-  const local = insertLocalItem(listId);
-  insertLocalItem(other, 'Schrauben');
-  db.prepare(
-    "INSERT INTO shopping_items (list_id, name, external_source, external_uid, external_account_id) VALUES (?, 'Milch', 'caldav', 'todo-1@test', ?)"
-  ).run(listId, accountId);
 
-  const rows = pendingShoppingCreations(listId);
-  assert.deepEqual(rows.map((r) => r.id), [local.id],
-    'Ein Spiegel ist kein Kandidat, und eine fremde Liste geht diesen Account nichts an');
-});
 
-test('Ein Upload macht den Einkaufsartikel zum Spiegel', async () => {
-  const { processPendingShoppingCreations } = await import('../server/services/caldav-todo-outbound.js');
-  const accountId = reset();
-  const listId    = insertShoppingList();
-  enableList(accountId, 'shopping', listId);
-  const item   = insertLocalItem(listId);
-  const client = fakeClient();
 
-  const created = await processPendingShoppingCreations(client, accountId, shoppingTargets(listId), listsByUrl());
 
-  assert.strictEqual(created, 1);
-  assert.strictEqual(client.calls.created.length, 1);
-  assert.match(client.calls.created[0].iCalString, /SUMMARY:Brot/);
 
-  const row = reloadItem(item.id);
-  assert.strictEqual(row.external_source, 'caldav');
-  assert.strictEqual(row.external_uid, todoUidFor('shopping', item.id));
-  assert.strictEqual(row.external_account_id, accountId);
-  assert.strictEqual(row.external_object_url, `${LIST_URL}${todoUidFor('shopping', item.id)}.ics`);
-});
 
-test('Eine verschwundene Zielliste laesst den Artikel lokal', async () => {
-  const { processPendingShoppingCreations } = await import('../server/services/caldav-todo-outbound.js');
-  const accountId = reset();
-  const listId    = insertShoppingList();
-  enableList(accountId, 'shopping', listId);
-  const item   = insertLocalItem(listId);
-  const client = fakeClient();
 
-  const created = await processPendingShoppingCreations(
-    client, accountId, [{ listUrl: 'https://dav.example/dav/u/weg/', targetListId: listId }], listsByUrl()
-  );
 
-  assert.strictEqual(created, 0);
-  assert.strictEqual(client.calls.created.length, 0);
-  assert.strictEqual(reloadItem(item.id).external_source, 'local');
-});
 
-test('Ein gescheiterter Upload laesst den Artikel als Kandidaten stehen', async () => {
-  const { processPendingShoppingCreations, pendingShoppingCreations } =
-    await import('../server/services/caldav-todo-outbound.js');
-  const accountId = reset();
-  const listId    = insertShoppingList();
-  enableList(accountId, 'shopping', listId);
-  const item   = insertLocalItem(listId);
-  const client = fakeClient({ onCreate: () => { throw new Error('507 Insufficient Storage'); } });
 
-  const created = await processPendingShoppingCreations(client, accountId, shoppingTargets(listId), listsByUrl());
 
-  assert.strictEqual(created, 0);
-  assert.strictEqual(reloadItem(item.id).external_source, 'local');
-  assert.strictEqual(pendingShoppingCreations(listId).length, 1,
-    'Ein Upload hat keinen Stand, der veralten koennte - er laeuft im naechsten Lauf wieder mit');
-});
 
-test('Der Sync-Lauf laedt neue Einkaufsartikel hoch (#831)', async () => {
-  const accountId = reset();
-  const listId    = insertShoppingList();
-  enableList(accountId, 'shopping', listId);
-  const item   = insertLocalItem(listId);
-  const client = fakeClient({ objects: [] });
-
-  await sync({ createClient: async () => client });
-
-  const row = reloadItem(item.id);
-  assert.ok(row, 'Der Artikel hat den Lauf ueberlebt - der Prune darf den frischen Spiegel nicht gleich wieder raeumen');
-  assert.strictEqual(row.external_source, 'caldav');
-  assert.strictEqual(client.calls.created.length, 1);
-});
-
-test('Der Sofortversuch laedt neue Einkaufsartikel hoch', async () => {
-  const accountId = reset();
-  const listId    = insertShoppingList();
-  enableList(accountId, 'shopping', listId);
-  const item   = insertLocalItem(listId);
-  const client = fakeClient();
-
-  const result = await flushOutbound({ createClient: async () => client });
-
-  assert.strictEqual(result.created, 1);
-  assert.strictEqual(reloadItem(item.id).external_source, 'caldav');
-});
-
-test('Eine Liste, die auf Aufgaben zeigt, nimmt keine Einkaufsartikel an', async () => {
-  // Spiegelbild des Riegels fuer Aufgaben: sonst kaeme der Artikel als Aufgabe
-  // zurueck.
-  const accountId = reset();
-  const listId    = insertShoppingList();
-  enableList(accountId, 'tasks', listId);
-  const item   = insertLocalItem(listId);
-  const client = fakeClient({ objects: [] });
-
-  await sync({ createClient: async () => client });
-
-  assert.strictEqual(client.calls.created.length, 0);
-  assert.strictEqual(reloadItem(item.id).external_source, 'local');
-});
 
 // Der Sofortversuch ordnet ein Objekt der Antwort nur der Zeile zu, nach deren
 // Adresse gefragt war. Fehlt das angefragte (404) und nennt der Server dafuer

@@ -81,12 +81,7 @@ function buildTargetSelect(account, list) {
   tasksOption.textContent = t('settings.caldavReminderMapTasks');
   tasksOption.selected = list.targetModule === 'tasks';
 
-  const shoppingOption = document.createElement('option');
-  shoppingOption.value = 'shopping';
-  shoppingOption.textContent = t('settings.caldavReminderMapShopping');
-  shoppingOption.selected = list.targetModule === 'shopping';
-
-  select.append(tasksOption, shoppingOption);
+  select.append(tasksOption);
 
   select.addEventListener('change', async () => {
     const previous = list.targetModule;

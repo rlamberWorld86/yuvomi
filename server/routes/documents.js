@@ -25,7 +25,6 @@ import {
 } from '../services/document-deletion-lock.js';
 import { ensureModuleFolder, isModuleFolderKey } from '../services/document-folders.js';
 import { subtreeIds, folderMoveIssue, MAX_FOLDER_DEPTH } from '../../public/utils/folder-tree.js';
-import { getAdapter as defaultGetDmsAdapter } from '../services/dms/index.js';
 import { getStatus as getGoogleDriveStatus } from '../services/google-drive-storage.js';
 import { refuseWhileRestoring } from '../middleware/restore-gate.js';
 import {
@@ -40,14 +39,6 @@ import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from '../utils/upload-limit.js';
 import { contentMatchesMime } from '../utils/file-signature.js';
 import { todayKey } from '../utils/timezone.js';
 
-let dmsAdapterFactory = defaultGetDmsAdapter;
-export function _setDmsAdapterFactory(fn) { dmsAdapterFactory = fn || defaultGetDmsAdapter; }
-
-function loadDmsAccount(id) {
-  return db.get().prepare('SELECT * FROM dms_accounts WHERE id = ?').get(id);
-}
-
-class DmsDocumentUnavailableError extends Error {}
 
 /** Der Zielordner verschwand, waehrend die Datei abgelegt wurde (#1909). */
 class SelectedFolderGoneError extends Error {}
@@ -114,25 +105,11 @@ const PREVIEWABLE_MIME = new Set([
   'text/csv',
 ]);
 
-// Bild-Typen, die als kompaktes DMS-Thumbnail (Issue #533) inline ausgeliefert
-// werden dürfen. Bewusst nur nicht-skriptfähige Rasterformate — SVG ist NICHT
-// enthalten, da es Skripte ausführen könnte. Liefert das DMS etwas anderes
-// (z. B. octet-stream), wird die Vorschau verworfen und der Client fällt auf das
-// Kategorie-Icon zurück.
-const THUMBNAIL_MIME = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-  'image/gif',
-]);
-
 function normalizeMime(value) {
   return String(value || '').split(';')[0].trim().toLowerCase();
 }
 
-// Effektiver MIME-Typ für Preview/Download. Manche DMS (Papra) liefern ihre Datei
-// aus XSS-Schutz stets als application/octet-stream aus; in dem Fall ist der beim
-// Verlinken gespeicherte spezifische MIME-Typ verlässlicher (Issue #451).
+// Fall back to the stored MIME type when the provider returns a generic type.
 function effectiveMime(content, doc) {
   const live = normalizeMime(content.mime);
   const stored = normalizeMime(doc.mime_type);
@@ -254,17 +231,15 @@ function documentSelect() {
   return `
     SELECT d.id, d.name, d.description, d.category, d.status, d.visibility,
            d.original_name, d.mime_type, d.file_size, d.storage_provider,
-           d.storage_backend, d.storage_key, d.dms_account_id, d.external_url,
+           d.storage_backend, d.storage_key,
            d.external_meta, d.folder_id, d.created_by, d.created_at, d.updated_at,
            d.expires_at, d.expiry_reminder_days,
            f.name AS folder_name,
            u.display_name AS creator_name, u.avatar_color AS creator_color,
-           da.provider AS dms_provider,
            GROUP_CONCAT(a.user_id) AS allowed_member_ids
     FROM family_documents d
     LEFT JOIN family_document_folders f ON f.id = d.folder_id
     LEFT JOIN users u ON u.id = d.created_by
-    LEFT JOIN dms_accounts da ON da.id = d.dms_account_id
     LEFT JOIN family_document_access a ON a.document_id = d.id
   `;
 }
@@ -305,38 +280,7 @@ function ensureFolder(key, name, actorId) {
 }
 
 async function resolveDocumentContent(document) {
-  let dmsResolver;
-  if (document.storage_backend === 'dms') {
-    const account = loadDmsAccount(document.dms_account_id);
-    if (!account) throw new DmsDocumentUnavailableError();
-    dmsResolver = async () => dmsAdapterFactory(account).fetchContent(document.storage_key);
-  }
-  return readDocumentContent(document, { dmsResolver });
-}
-
-// Kompaktes Vorschaubild (Issue #533). Nur für DMS-verknüpfte Dokumente, deren
-// Adapter Thumbnails liefert (Paperless). Wirft ThumbnailUnavailableError, wenn
-// kein Bild erzeugt werden kann — der Client fällt dann auf das Icon zurück.
-class ThumbnailUnavailableError extends Error {}
-
-async function resolveDmsThumbnail(account, storageKey) {
-  const adapter = dmsAdapterFactory(account);
-  if (typeof adapter.fetchThumbnail !== 'function') throw new ThumbnailUnavailableError();
-  const thumb = await adapter.fetchThumbnail(storageKey);
-  const mime = normalizeMime(thumb?.mime);
-  if (!thumb?.buffer?.length || !THUMBNAIL_MIME.has(mime)) throw new ThumbnailUnavailableError();
-  return { buffer: thumb.buffer, mime };
-}
-
-// no-store wie beim Viewer: ein Vorschaubild zeigt die erste Seite eines
-// Dokuments, und der Browser-Cache ueberlebt das Abmelden.
-function sendThumbnail(res, thumb) {
-  res.setHeader('Content-Type', thumb.mime);
-  res.setHeader('Content-Length', String(thumb.buffer.length));
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
-  res.end(thumb.buffer);
+  return readDocumentContent(document);
 }
 
 function sendStorageError(res, error, fallbackMessage) {
@@ -413,7 +357,6 @@ router.get('/meta/options', (req, res) => {
         // Der Client blendet Deep-Links in die (admin-only) Dokument-Einstellungen
         // nur ein, wenn sie auch erreichbar sind — kein toter Link für Mitglieder.
         is_admin: isAdminRequest(req),
-        dms_accounts: [],
       },
     });
   } catch (err) {
@@ -1288,27 +1231,6 @@ router.patch('/:id/archive', (req, res) => {
   }
 });
 
-router.get('/:id/thumbnail', async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const doc = getVisibleDocument(id, req, true);
-    if (!doc) return res.status(404).json({ error: 'Document not found.', code: 404 });
-    if (doc.storage_backend !== 'dms') {
-      return res.status(415).json({ error: 'Thumbnail not available for this document.', code: 415 });
-    }
-    const account = loadDmsAccount(doc.dms_account_id);
-    if (!account) return res.status(404).json({ error: 'Linked DMS account is gone.', code: 404 });
-    const thumb = await resolveDmsThumbnail(account, doc.storage_key);
-    sendThumbnail(res, thumb);
-  } catch (err) {
-    if (err instanceof ThumbnailUnavailableError) {
-      return res.status(415).json({ error: 'Thumbnail not available for this document.', code: 415 });
-    }
-    log.error('GET /:id/thumbnail error:', err);
-    res.status(502).json({ error: 'Failed to load thumbnail.', code: 502 });
-  }
-});
-
 // Preview und Download lesen ein Drive-Dokument ueber den Google-Client, dessen
 // `tokens`-Listener ein erneuertes Token nach dem Warten speichert: waehrend
 // eines Restores 503, sonst festgehalten wie eine schreibende Anfrage (#1551).
@@ -1346,9 +1268,6 @@ router.get('/:id/preview', refuseWhileRestoring, async (req, res) => {
     }
     res.end(content.buffer);
   } catch (err) {
-    if (err instanceof DmsDocumentUnavailableError) {
-      return res.status(404).json({ error: 'Linked DMS account is gone.', code: 404 });
-    }
     log.error('GET /:id/preview error:', err);
     if (sendStorageError(res, err, 'Document storage read failed.')) return;
     res.status(500).json({ error: 'Internal server error.', code: 500 });
@@ -1369,9 +1288,6 @@ router.get('/:id/download', refuseWhileRestoring, async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.end(content.buffer);
   } catch (err) {
-    if (err instanceof DmsDocumentUnavailableError) {
-      return res.status(404).json({ error: 'Linked DMS account is gone.', code: 404 });
-    }
     log.error('GET /:id/download error:', err);
     if (sendStorageError(res, err, 'Document storage read failed.')) return;
     res.status(500).json({ error: 'Internal server error.', code: 500 });

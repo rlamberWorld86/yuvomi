@@ -3,11 +3,6 @@ import { authPaths } from './auth.js';
 import { familyPaths } from './family.js';
 import { dashboardPaths } from './dashboard.js';
 import { tasksPaths } from './tasks.js';
-import { shoppingPaths } from './shopping.js';
-import { mealsPaths } from './meals.js';
-import { recipesPaths } from './recipes.js';
-import { pantryPaths } from './pantry.js';
-import { kitchenPaths } from './kitchen.js';
 import { calendarPaths } from './calendar.js';
 import { notesPaths } from './notes.js';
 import { contactsPaths } from './contacts.js';
@@ -19,7 +14,6 @@ import { searchPaths } from './search.js';
 import { pushPaths } from './push.js';
 import { notificationsPaths } from './notifications.js';
 import { quickLinksPaths } from './quicklinks.js';
-import { recipeProvidersPaths } from './recipeproviders.js';
 import { permissionsPaths } from './permissions.js';
 
 export function buildPaths() {
@@ -29,11 +23,6 @@ export function buildPaths() {
     ...familyPaths(),
     ...dashboardPaths(),
     ...tasksPaths(),
-    ...shoppingPaths(),
-    ...mealsPaths(),
-    ...recipesPaths(),
-    ...pantryPaths(),
-    ...kitchenPaths(),
     ...calendarPaths(),
     ...notesPaths(),
     ...contactsPaths(),
@@ -45,7 +34,6 @@ export function buildPaths() {
     ...pushPaths(),
     ...notificationsPaths(),
     ...quickLinksPaths(),
-    ...recipeProvidersPaths(),
     ...permissionsPaths(),
   };
 }

@@ -1,14 +1,17 @@
 # Lamber Cockpit: local module scope
 
 The installed scope follows the existing household configuration: overview,
-calendar, tasks, notes, contacts, birthdays, documents, and the complete kitchen
-(meals, recipes, shopping and pantry). The MCP endpoint and its existing token
+calendar, tasks, notes, contacts, birthdays and documents. The MCP endpoint and its existing token
 authentication remain available. External API token administration is removed.
 
 Retired module entry points: rewards, schedule, inventory, housekeeping, waste,
 health and budget, including their dedicated feeds and periodic jobs. SMTP,
 wall displays, screensaver/photos, weather, app backup/restore and extension
-installation are removed from the active application. The modules discovery
+installation are removed from the active application. Kitchen (meals, recipes,
+shopping and pantry), help, news, appearance settings and DMS integration are
+also removed, including their feature code and exclusive endpoints. Shared
+task synchronization, sorting, language formatting and theme defaults remain.
+The modules discovery
 endpoint returns an empty list for compatibility.
 
 Documents use Google Drive for all new uploads and the normal listing. Uploads

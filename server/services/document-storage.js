@@ -852,7 +852,7 @@ function toStoredBinary(value) {
   return Buffer.from(String(value), 'base64');
 }
 
-export async function readDocumentContent(document, { dmsResolver } = {}) {
+export async function readDocumentContent(document) {
   if (document.storage_backend === 'local') {
     // Folder-backed local storage: a non-null storage_key points to a relative
     // path under the configured base. Legacy rows keep storage_key=null and are
@@ -907,33 +907,6 @@ export async function readDocumentContent(document, { dmsResolver } = {}) {
         error,
         'DOCUMENT_STORAGE_READ_FAILED',
         'The Google Drive document could not be read.'
-      );
-    }
-  }
-  if (document.storage_backend === 'dms') {
-    if (!dmsResolver) {
-      throw new StorageError(
-        'DOCUMENT_STORAGE_READ_FAILED',
-        'The DMS document is not available.'
-      );
-    }
-    try {
-      const resolved = await dmsResolver(document);
-      if (Buffer.isBuffer(resolved)) {
-        return {
-          buffer: resolved,
-          mime: document.mime_type || 'application/octet-stream',
-        };
-      }
-      return {
-        buffer: Buffer.from(resolved.buffer),
-        mime: resolved.mime || document.mime_type || 'application/octet-stream',
-      };
-    } catch (error) {
-      throw toStorageError(
-        error,
-        'DOCUMENT_STORAGE_READ_FAILED',
-        'The DMS document could not be read.'
       );
     }
   }

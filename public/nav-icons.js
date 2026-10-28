@@ -323,11 +323,11 @@ export const MODULE_ICON = {
   schedule:         'briefcase-business',
   tasks:            'check-square',
   notes:            'sticky-note',
-  meals:            'utensils',
-  recipes:          'book-text',
-  shopping:         'shopping-cart',
-  pantry:           'archive',
-  kitchen:          'utensils',
+
+
+
+
+
   housekeeping:     'paintbrush',
   waste:            'trash-2',
   documents:        'folder-lock',

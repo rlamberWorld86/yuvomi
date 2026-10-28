@@ -91,73 +91,12 @@ test('GET / liefert die dokumentierten Defaults', async () => {
   assert.equal(body.data.app_name, 'Lamber Cockpit');
   assert.equal(body.data.budget_mode, 'shared');
   assert.equal(body.data.calendar_default_duration, 60);
-  assert.deepEqual(body.data.visible_meal_types, ['breakfast', 'lunch', 'dinner', 'snack']);
+  assert.ok(!('visible_meal_types' in body.data));
+  assert.ok(!('meal_type_names' in body.data));
   // Feature-Schalter default an (fehlender Wert => aktiv).
   assert.equal(body.data.health_cycle_enabled, true);
   assert.equal(body.data.rewards_require_approval, true);
   assert.equal(body.data.tasks_subtasks_expanded, false);
-});
-
-// --------------------------------------------------------
-// visible_meal_types
-// --------------------------------------------------------
-test('PUT visible_meal_types: Nicht-Array -> 400', async () => {
-  assert.equal((await put({ visible_meal_types: 'breakfast' })).status, 400);
-});
-test('PUT visible_meal_types: leer nach Filter -> 400', async () => {
-  assert.equal((await put({ visible_meal_types: ['nonsense'] })).status, 400);
-});
-test('PUT visible_meal_types: gültige Teilmenge persistiert + filtert Unbekanntes', async () => {
-  const { status, body } = await put({ visible_meal_types: ['breakfast', 'dinner', 'nope'] });
-  assert.equal(status, 200);
-  assert.deepEqual(body.data.visible_meal_types, ['breakfast', 'dinner']);
-  assert.deepEqual((await get()).body.data.visible_meal_types, ['breakfast', 'dinner']);
-});
-
-// --------------------------------------------------------
-// meal_type_names (#1058) - Haushaltsnamen ueber stabilen Slot-Schluesseln
-// --------------------------------------------------------
-test('PUT meal_type_names: Nicht-Objekt -> 400', async () => {
-  assert.equal((await put({ meal_type_names: 'Zmittag' })).status, 400);
-  assert.equal((await put({ meal_type_names: ['Zmittag'] })).status, 400);
-});
-test('PUT meal_type_names: Nicht-String als Wert -> 400', async () => {
-  assert.equal((await put({ meal_type_names: { lunch: 42 } })).status, 400);
-});
-test('PUT meal_type_names: zu langer Name -> 400', async () => {
-  assert.equal((await put({ meal_type_names: { lunch: 'x'.repeat(41) } })).status, 400);
-  assert.equal((await put({ meal_type_names: { lunch: 'x'.repeat(40) } })).status, 200);
-});
-test('PUT meal_type_names: Name wird gespeichert und wieder gelesen', async () => {
-  // Ein Komma im Namen ist der Grund fuer JSON statt der kommaseparierten Form
-  // von visible_meal_types nebenan: ein split(',') machte hier zwei Namen.
-  const { status, body } = await put({ meal_type_names: { lunch: '  Zmittag  ', snack: 'Znueni, spaet' } });
-  assert.equal(status, 200);
-  assert.deepEqual(body.data.meal_type_names, { lunch: 'Zmittag', snack: 'Znueni, spaet' });
-  assert.deepEqual((await get()).body.data.meal_type_names, { lunch: 'Zmittag', snack: 'Znueni, spaet' });
-});
-test('PUT meal_type_names: unbekannter Slot faellt weg, ohne den Request zu kippen', async () => {
-  const { status, body } = await put({ meal_type_names: { lunch: 'Zmittag', brunch: 'Elf Uhr' } });
-  assert.equal(status, 200);
-  assert.deepEqual(body.data.meal_type_names, { lunch: 'Zmittag' });
-});
-test('PUT meal_type_names: leerer Name entfernt ihn - das eingebaute Wort gilt wieder', async () => {
-  await put({ meal_type_names: { lunch: 'Zmittag', snack: 'Znueni' } });
-  const { body } = await put({ meal_type_names: { lunch: '', snack: 'Znueni' } });
-  assert.deepEqual(body.data.meal_type_names, { snack: 'Znueni' });
-  // Und der Weg ganz zurueck: null loescht die Zeile, GET faellt auf {} zurueck.
-  await put({ meal_type_names: null });
-  assert.deepEqual((await get()).body.data.meal_type_names, {});
-});
-test('GET meal_type_names: eine kaputte Zeile liefert {}, keinen 500er', async () => {
-  // Der Lesepfad darf an handgeschriebenem Muell in sync_config nicht sterben -
-  // sonst nimmt eine unlesbare Zeile die ganze Praeferenz-Antwort mit.
-  db.prepare("INSERT INTO sync_config (key, value) VALUES ('meal_type_names', '{kaputt')"
-    + " ON CONFLICT(key) DO UPDATE SET value = excluded.value").run();
-  const { status, body } = await get();
-  assert.equal(status, 200);
-  assert.deepEqual(body.data.meal_type_names, {});
-  await put({ meal_type_names: null });
 });
 
 // --------------------------------------------------------
@@ -288,12 +227,12 @@ test('timezone_hint_dismissed: haushaltsweit, nur Admin schreibt, nur ein Boolea
   assert.equal((await get()).body.data.timezone_hint_dismissed, false, 'ein 403 darf nichts geschrieben haben');
   // Auch nicht die ANDEREN Felder desselben Requests: der Check steht vor
   // jedem Schreiben, ein gemischtes Payload wendet sich nicht teilweise an.
-  const before = (await get()).body.data.visible_meal_types;
-  const other = before.includes('snack') ? ['breakfast'] : ['snack'];
-  assert.equal((await put({ visible_meal_types: other, timezone_hint_dismissed: true }, { role: 'member' })).status, 403);
-  assert.deepEqual((await get()).body.data.visible_meal_types, before, 'ein 403 hat nichts teilweise angewendet');
-  assert.equal((await put({ visible_meal_types: other, timezone_hint_dismissed: 'ja' })).status, 400);
-  assert.deepEqual((await get()).body.data.visible_meal_types, before, 'ein 400 hat nichts teilweise angewendet');
+  const before = (await get()).body.data.currency;
+  const other = before === 'EUR' ? 'USD' : 'EUR';
+  assert.equal((await put({ currency: other, timezone_hint_dismissed: true }, { role: 'member' })).status, 403);
+  assert.deepEqual((await get()).body.data.currency, before, 'ein 403 hat nichts teilweise angewendet');
+  assert.equal((await put({ currency: other, timezone_hint_dismissed: 'ja' })).status, 400);
+  assert.deepEqual((await get()).body.data.currency, before, 'ein 400 hat nichts teilweise angewendet');
   for (const bad of ['1', 1, 'true', null, {}]) {
     assert.equal((await put({ timezone_hint_dismissed: bad })).status, 400, `${JSON.stringify(bad)} ist kein Boolean`);
   }
@@ -424,21 +363,19 @@ test('PUT dashboard_widgets: zukünftige sichere Widget-ID wird unverändert per
   assert.deepEqual(saved.body.data.dashboard_widgets, requested);
   assert.deepEqual((await get()).body.data.dashboard_widgets, requested);
 });
-test('PUT dashboard_widgets: aktuelle 13-Widget-Konfiguration bleibt beim GET erhalten', async () => {
+test('PUT dashboard_widgets: Konfiguration der verbliebenen Widgets bleibt beim GET erhalten', async () => {
   const requested = [
     { id: 'weather', visible: true, order: 0, size: '2x1' },
     { id: 'tasks', visible: true, order: 1, size: '2x2' },
     { id: 'calendar', visible: true, order: 2, size: '2x2' },
     { id: 'notes', visible: true, order: 3, size: '2x1' },
-    { id: 'shopping', visible: true, order: 4, size: '2x1' },
-    { id: 'birthdays', visible: true, order: 5, size: '1x1' },
-    { id: 'family', visible: true, order: 6, size: '1x1' },
-    { id: 'meals', visible: true, order: 7, size: '1x1' },
-    { id: 'budget', visible: true, order: 8, size: '1x1' },
-    { id: 'rewards', visible: true, order: 9, size: '1x2' },
-    { id: 'health', visible: true, order: 10, size: '2x1' },
-    { id: 'cycle', visible: false, order: 11, size: '2x1' },
-    { id: 'housekeeping', visible: true, order: 12, size: '1x1' },
+    { id: 'birthdays', visible: true, order: 4, size: '1x1' },
+    { id: 'family', visible: true, order: 5, size: '1x1' },
+    { id: 'budget', visible: true, order: 6, size: '1x1' },
+    { id: 'rewards', visible: true, order: 7, size: '1x2' },
+    { id: 'health', visible: true, order: 8, size: '2x1' },
+    { id: 'cycle', visible: false, order: 9, size: '2x1' },
+    { id: 'housekeeping', visible: true, order: 10, size: '1x1' },
   ];
 
   const saved = await put({ dashboard_widgets: requested });

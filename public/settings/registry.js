@@ -106,25 +106,6 @@ export const SETTINGS_SECTIONS = freezeEntries([
     loader: () => import('/settings/pages/personal-account.js'),
   },
   {
-    id: 'personal-appearance',
-    sheetId: 'personal-appearance',
-    scope: 'mine',
-    labelKey: 'settings.pageAppearance',
-    descriptionKey: 'settings.pageAppearanceDescription',
-    options: [
-      { key: 'settings.sectionDesign', also: ['settings.themeSystem', 'settings.themeLight', 'settings.themeDark'], synonyms: 'settingsSynonyms.theme' },
-      'settings.localeLabel',
-      'settings.dataLanguageLabel',
-      'settings.regionLabel',
-      'settings.currencyLabel',
-      { key: 'settings.timezoneLabel', synonyms: 'settingsSynonyms.timezone' },
-      'settings.dateFormatLabel',
-      { key: 'settings.timeFormatLabel', synonyms: 'settingsSynonyms.timeFormat' },
-    ],
-    adminOnly: false,
-    loader: () => import('/settings/pages/personal-appearance.js'),
-  },
-  {
     id: 'personal-device',
     sheetId: 'personal-device',
     scope: 'mine',
@@ -375,20 +356,6 @@ export const SETTINGS_SECTIONS = freezeEntries([
     loader: () => import('/settings/pages/sync-reminders.js'),
   },
   {
-    id: 'modules-kitchen',
-    sheetId: 'module-kitchen',
-    scope: 'household',
-    labelKey: 'settings.pageKitchen',
-    descriptionKey: 'settings.pageKitchenDescription',
-    options: [
-      'settings.mealTypesLabel',
-      'settings.mealTypeNamesLabel',
-      { key: 'settings.recipeProvidersTitle', terms: ['Mealie', 'Tandoor'] },
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/modules-kitchen.js'),
-  },
-  {
     id: 'sync-contacts',
     sheetId: 'module-contacts',
     scope: 'household',
@@ -415,18 +382,6 @@ export const SETTINGS_SECTIONS = freezeEntries([
     adminOnly: true,
     loader: () => import('/settings/pages/documents-storage.js'),
   },
-  {
-    id: 'documents-dms',
-    sheetId: 'module-documents',
-    scope: 'household',
-    labelKey: 'settings.pageDocumentDms',
-    descriptionKey: 'settings.pageDocumentDmsDescription',
-    options: [
-      { key: 'settings.dmsTitle', terms: ['Paperless'] },
-    ],
-    adminOnly: true,
-    loader: () => import('/settings/pages/documents-dms.js'),
-  },
   // DIE EXPORTE STEHEN IM BLATT IHRES MODULS (R14, A7 P2-3). Oma Ingrid sucht
   // den Schichtplan-Export im Blatt Schichtplan, nicht unter Kalender. Jeder
   // Token haengt an der eigenen users-Zeile, keine Route traegt einen
@@ -447,7 +402,6 @@ export const SETTINGS_SECTIONS = freezeEntries([
 export const SETTINGS_LEAVES = freezeEntries([
   // Konto
   { id: 'personal-account', domainId: 'personal', path: '/settings/personal/account', labelKey: 'settings.pageAccount', descriptionKey: 'settings.pageAccountDescription', ssoOnlyDescriptionKey: 'settings.pageAccountDescriptionSsoOnly', icon: 'circle-user' },
-  { id: 'personal-appearance', domainId: 'personal', path: '/settings/personal/appearance', labelKey: 'settings.pageAppearance', descriptionKey: 'settings.pageAppearanceDescription', icon: 'palette' },
   { id: 'personal-device', domainId: 'personal', path: '/settings/personal/device', labelKey: 'settings.pageDevice', descriptionKey: 'settings.pageDeviceDescription', icon: 'smartphone' },
   { id: 'personal-notifications', domainId: 'personal', path: '/settings/personal/notifications', labelKey: 'settings.pageNotifications', descriptionKey: 'settings.pageNotificationsDescription', icon: 'bell' },
   // Haushalt
@@ -464,7 +418,6 @@ export const SETTINGS_LEAVES = freezeEntries([
   // Adresse: die OAuth-Rueckkehr und die Alt-Pfade landen hier.
   { id: 'module-calendar-sync', domainId: 'modules', path: '/settings/modules/calendar-sync', labelKey: 'settings.pageSyncCalendar', descriptionKey: 'settings.pageSyncCalendarDescription', icon: 'refresh-cw', module: 'calendar', moduleStatus: false },
   { id: 'module-tasks', domainId: 'modules', path: '/settings/modules/tasks', labelKey: 'nav.tasks', descriptionKey: 'settings.sheetTasksDescription', icon: 'check-square', module: 'tasks' },
-  { id: 'module-kitchen', domainId: 'modules', path: '/settings/modules/kitchen', labelKey: 'nav.kitchen', descriptionKey: 'settings.pageKitchenDescription', icon: 'utensils', module: 'kitchen' },
   { id: 'module-documents', domainId: 'modules', path: '/settings/modules/documents', labelKey: 'nav.documents', descriptionKey: 'settings.sheetDocumentsDescription', icon: 'folder-lock', module: 'documents' },
   { id: 'module-contacts', domainId: 'modules', path: '/settings/modules/contacts', labelKey: 'nav.contacts', descriptionKey: 'settings.pageSyncContactsDescription', icon: 'book-user', module: 'contacts' },
   // `placement: 'end'` haelt das Blatt hinter den sortierten Modulblaettern
@@ -496,10 +449,8 @@ const MOVED_SETTINGS_PATHS = Object.freeze({
   '/settings/sync/contacts': { path: '/settings/modules/contacts', section: 'sync-contacts' },
   '/settings/sync/reminders': { path: '/settings/modules/tasks', section: 'sync-reminders' },
   '/settings/sync/storage': { path: '/settings/modules/documents', section: 'documents-storage' },
-  '/settings/sync/dms': { path: '/settings/modules/documents', section: 'documents-dms' },
   // Aeltere Umbauten (Critique 2026-07-27).
   '/settings/documents/storage': { path: '/settings/modules/documents', section: 'documents-storage' },
-  '/settings/documents/dms': { path: '/settings/modules/documents', section: 'documents-dms' },
 });
 
 /**
@@ -520,10 +471,7 @@ const RETIRED_SETTINGS_OPTIONS = Object.freeze({
  * Blatt von damals; `currentSettingsPath` hebt es aufs heutige Ziel.
  */
 const LEGACY_SETTINGS_PATHS = Object.freeze({
-  general: '/settings/personal/appearance',
-  meals: '/settings/modules/kitchen',
   // Kategorienpflege lebt bewusst im Modul, neben ihren Daten.
-  shopping: '/shopping?manage=categories',
   calendar: '/settings/modules/calendar',
   sync: '/settings/sync/calendar',
   account: '/settings/personal/account',

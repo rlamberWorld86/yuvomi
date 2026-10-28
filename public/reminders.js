@@ -178,7 +178,7 @@ const REMINDER_ORIGINS = {
   subscription:           { accent: 'var(--module-budget)',    icon: 'wallet',       labelKey: 'subscriptions.tabLabel' },
   inventory_item:         { accent: 'var(--module-inventory)', icon: 'package',      labelKey: 'nav.inventory' },
   inventory_tracked_date: { accent: 'var(--module-inventory)', icon: 'package',      labelKey: 'nav.inventory' },
-  pantry_item:            { accent: 'var(--module-pantry)',    icon: 'archive',      labelKey: 'nav.pantry' },
+
   cycle_period:           { accent: 'var(--module-health)',    icon: 'droplet',      labelKey: 'health.cycle.title' },
   cycle_log_nudge:        { accent: 'var(--module-health)',    icon: 'droplet',      labelKey: 'health.cycle.title' },
   schedule_entry:         { accent: 'var(--module-schedule)',  icon: 'briefcase-business', labelKey: 'nav.schedule' },
@@ -191,7 +191,7 @@ const REMINDER_ORIGINS = {
   // Keine Erinnerung, sondern eine Meldung (#1912): der Toast traegt deshalb
   // den Namen des Moduls statt "Erinnerung" (`toastTitleKey`). Das Ziel setzt
   // der Server (`target_url`, die Liste, auf die der Artikel zurueckging).
-  shopping_move_returned:  { accent: 'var(--module-shopping)',  icon: 'shopping-cart', labelKey: 'nav.shopping', toastTitleKey: 'nav.shopping', sentence: true, url: '/shopping' },
+
 };
 
 function reminderTargetUrl(reminder) {
@@ -315,17 +315,10 @@ function fastingReminderBody(reminder) {
  * wohin, und warum. Die Namen kommen aus der Momentaufnahme der Meldung
  * (`move_notice`), nicht aus den Listen von jetzt.
  */
-function moveReturnedBody(reminder) {
-  if (reminder.entity_type !== 'shopping_move_returned') return null;
-  const notice = reminder.move_notice;
-  if (!notice) return null;
-  return t(notice.reason === 'waited' ? 'shopping.moveReturned.waited' : 'shopping.moveReturned.refused', {
-    item: notice.item_name, back: notice.back_list_name, target: notice.target_list_name,
-  });
-}
+
 
 function reminderBody(reminder) {
-  return moveReturnedBody(reminder) ?? fastingReminderBody(reminder) ?? cycleReminderBody(reminder) ?? reminder.entity_title ?? '';
+  return fastingReminderBody(reminder) ?? cycleReminderBody(reminder) ?? reminder.entity_title ?? '';
 }
 
 /**

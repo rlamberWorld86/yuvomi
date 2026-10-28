@@ -150,47 +150,6 @@ function createTask(db, actorId, args) {
   return { ...task, tags };
 }
 
-function listShoppingItems(db, args) {
-  let sql = `
-    SELECT si.id, si.name, si.quantity, si.category, si.is_checked, sl.name AS list
-    FROM shopping_items si
-    JOIN shopping_lists sl ON sl.id = si.list_id
-  `;
-  if (args.include_checked !== true) sql += ' WHERE si.is_checked = 0';
-  sql += ' ORDER BY si.created_at DESC LIMIT 200';
-  return db.prepare(sql).all();
-}
-
-function addShoppingItem(db, actorId, args) {
-  const name = v.str(args.name, 'name', { required: true });
-  const quantity = v.str(args.quantity, 'quantity', { required: false, max: v.MAX_SHORT });
-  const category = v.str(args.category, 'category', { required: false, max: v.MAX_SHORT });
-
-  const errors = v.collectErrors([name, quantity, category]);
-  if (errors.length) throw new ToolError(errors.join(' '));
-
-  const list = args.list
-    ? db.prepare('SELECT id FROM shopping_lists WHERE name = ? ORDER BY id LIMIT 1').get(String(args.list).trim())
-    : db.prepare('SELECT id FROM shopping_lists ORDER BY id LIMIT 1').get();
-
-  if (!list) {
-    throw new ToolError(args.list
-      ? `No shopping list named "${args.list}" found.`
-      : 'No shopping list exists yet. Create one in the app first.');
-  }
-
-  const result = db.prepare(`
-    INSERT INTO shopping_items (list_id, name, quantity, category)
-    VALUES (?, ?, ?, ?)
-  `).run(list.id, name.value, quantity.value, category.value || 'Sonstiges');
-
-  return db.prepare(`
-    SELECT si.id, si.name, si.quantity, si.category, si.is_checked, sl.name AS list
-    FROM shopping_items si JOIN shopping_lists sl ON sl.id = si.list_id
-    WHERE si.id = ?
-  `).get(result.lastInsertRowid);
-}
-
 function listUpcomingEvents(db, actorId, args) {
   let limit = parseInt(args.limit, 10);
   if (!Number.isFinite(limit)) limit = 20;
@@ -601,34 +560,6 @@ const CORE_TOOLS = [
       required: ['title'],
     },
     handler: (ctx, args) => createTask(ctx.db, ctx.actor.id, args),
-  },
-  {
-    name: 'list_shopping_items',
-    description: 'List shopping items across all lists (unchecked by default).',
-    scope: { module: 'shopping', access: 'read' },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        include_checked: { type: 'boolean', description: 'Also include already-checked items.' },
-      },
-    },
-    handler: (ctx, args) => listShoppingItems(ctx.db, args),
-  },
-  {
-    name: 'add_shopping_item',
-    description: 'Add an item to a shopping list. Uses the first list if none is named.',
-    scope: { module: 'shopping', access: 'write' },
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name:     { type: 'string', description: 'Item name (required).' },
-        quantity: { type: 'string', description: 'Optional quantity, e.g. "2" or "500 g".' },
-        category: { type: 'string', description: 'Optional category.' },
-        list:     { type: 'string', description: 'Optional target list name.' },
-      },
-      required: ['name'],
-    },
-    handler: (ctx, args) => addShoppingItem(ctx.db, ctx.actor.id, args),
   },
   {
     name: 'list_upcoming_events',

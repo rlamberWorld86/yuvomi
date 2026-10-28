@@ -1,6 +1,6 @@
 /**
  * Tests: die Fehler der Dokumente (#1909)
- * Module: server/routes/documents.js, server/routes/dms.js (link, push),
+ * Module: server/routes/documents.js,
  *         public/pages/documents.js, public/utils/document-folder-delete.js
  *
  * Der Server nennt den Fall (`reason`), die Seite sagt den Satz der App - nie
@@ -16,8 +16,8 @@
  * zeigt die Seite den Satz und laedt nach, statt "geloescht" zu behaupten.
  *
  * Gefahren wird auf beiden Seiten der ECHTE Code:
- * - Server: die echten Router (documents, dms) ueber einer migrierten
- *   In-Memory-DB, das DMS ueber `_setAdapterFactory`.
+ * - Server: der echte Dokumente-Router ueber einer migrierten
+ *   In-Memory-DB.
  * - Seite: die echten Handler bis in ihr catch, ueber den api-Stub des Loaders
  *   (`__apiStub`), den Modal-Stub (`__openModal`, `__closeModal`), die
  *   Auswahl- und Eingabe-Stubs (`__selectModal`, `__promptModal`) und den
@@ -28,16 +28,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import express from 'express';
 import Database from 'better-sqlite3-multiple-ciphers';
 
 process.env.DB_PATH = ':memory:';
 process.env.SESSION_SECRET = 'documents-errors-test-secret';
-const { tempDir } = await import('./tmp-dir.js');
-const storageRoot = tempDir('yuvomi-documents-errors-');
-process.env.DOCUMENT_STORAGE_LOCAL_PATH = storageRoot;
 
 globalThis.localStorage = globalThis.localStorage ?? { getItem: () => null, setItem() {}, removeItem() {}, clear() {} };
 const { installMiniDom } = await import('./mini-dom.js');
@@ -49,8 +44,14 @@ globalThis.window.matchMedia = globalThis.window.matchMedia
 
 const { MIGRATIONS, get, _setTestDatabase } = await import('../server/db.js');
 const { default: documentsRouter, _setStageUploadForTest } = await import('../server/routes/documents.js');
-const { stageDocumentUpload } = await import('../server/services/document-storage.js');
-const { default: dmsRouter, _setAdapterFactory } = await import('../server/routes/dms.js');
+const { StorageError } = await import('../server/services/document-storage.js');
+let uploaded = 0;
+const stagedDriveUpload = async () => ({
+  storage_backend: 'google_drive', storage_provider: 'external',
+  storage_key: `test-drive-${++uploaded}`, content_data: '',
+});
+_setStageUploadForTest(stagedDriveUpload);
+test.after(() => _setStageUploadForTest(null));
 const { __test: page } = await import('../public/pages/documents.js');
 const { CASE_MESSAGES, CASE_PARAMS, GONE_REASONS } = await import('../public/utils/friendly-error.js');
 
@@ -88,7 +89,6 @@ app.use((req, _res, next) => {
   req.session = { userId: admin, role: 'admin' };
   next();
 });
-app.use('/api/v1/documents/dms', dmsRouter);
 app.use('/api/v1/documents', documentsRouter);
 const server = http.createServer(app);
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -151,27 +151,23 @@ test('Server: ein Dokument in einen inzwischen geloeschten Ordner - hochladen un
   }
 });
 
-test('Server: der Zielordner verschwindet WAEHREND des Hochladens - 400 mit dem Fall statt 500, und die abgelegte Datei wird weggeraeumt', async () => {
+test('Server: der Zielordner verschwindet waehrend des Drive-Uploads - kein lokaler Datensatz wird angelegt', async () => {
   // Zwischen der Pruefung und dem Einfuegen liegt das Ablegen der Datei, ein
   // await: dort kommt ein anderes Loeschen dazwischen (Review zu #1994).
   // Gefahren mit der Ordner-Ablage, damit die abgelegte Datei sichtbar ist.
-  const { readdirSync } = await import('node:fs');
   const target = await folder('Verschwindet beim Hochladen');
-  const files = () => readdirSync(storageRoot, { recursive: true }).filter((name) => String(name).endsWith('.pdf'));
-  process.env.DOCUMENT_STORAGE_LOCAL_ENABLED = 'true';
-  const before = files().length;
+  const before = db.prepare('SELECT COUNT(*) AS n FROM family_documents').get().n;
   _setStageUploadForTest(async (args) => {
-    const staged = await stageDocumentUpload(args);
+    const staged = await stagedDriveUpload(args);
     db.prepare('DELETE FROM family_document_folders WHERE id = ?').run(target);
     return staged;
   });
   try {
     const r = await call('POST', '', upload({ folder_id: target }));
     assert.deepEqual([r.status, r.body?.reason, r.body?.error], [400, 'documents_selected_folder_not_found', 'Folder not found.'], JSON.stringify(r.body));
-    assert.equal(files().length, before, 'die schon abgelegte Datei bleibt nicht liegen');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM family_documents').get().n, before);
   } finally {
-    _setStageUploadForTest(null);
-    delete process.env.DOCUMENT_STORAGE_LOCAL_ENABLED;
+    _setStageUploadForTest(stagedDriveUpload);
   }
 });
 
@@ -213,91 +209,24 @@ test('Server: was eine gewaehlte Datei am Hochladen scheitern laesst, traegt sei
 });
 
 test('Server: ein Speicher, der nicht schreiben kann, nennt den Fall (502 wie bisher)', async () => {
-  // Die Ablage im Ordner ist an, der Ordner aber eine DATEI: das Schreiben
-  // scheitert wie an einem schreibgeschuetzten oder fehlenden Mount.
-  const blocker = join(storageRoot, 'kein-verzeichnis');
-  writeFileSync(blocker, 'x');
-  process.env.DOCUMENT_STORAGE_LOCAL_PATH = blocker;
-  process.env.DOCUMENT_STORAGE_LOCAL_ENABLED = 'true';
+  _setStageUploadForTest(async () => {
+    throw new StorageError('DOCUMENT_STORAGE_WRITE_FAILED', 'Drive upload failed');
+  });
   try {
     const r = await call('POST', '', upload());
-    assert.deepEqual([r.status, r.body?.reason], [502, 'documents_storage_failed'], JSON.stringify(r.body));
+    assert.deepEqual([r.status, r.body?.storage_code], [502, 'DOCUMENT_STORAGE_WRITE_FAILED'], JSON.stringify(r.body));
   } finally {
-    process.env.DOCUMENT_STORAGE_LOCAL_PATH = storageRoot;
-    delete process.env.DOCUMENT_STORAGE_LOCAL_ENABLED;
+    _setStageUploadForTest(stagedDriveUpload);
   }
 });
 
-test('Server: DMS verknuepfen und senden nennen ihre Faelle', async () => {
-  const account = db.prepare(`INSERT INTO dms_accounts (provider, name, base_url, api_token)
-    VALUES ('paperless', 'Paperless', 'https://dms.test', 'token')`).run().lastInsertRowid;
-  let behaviour = 'ok';
-  _setAdapterFactory(() => ({
-    async getDocument(id) {
-      if (behaviour === 'gone') throw Object.assign(new Error('nope'), { status: 404 });
-      if (behaviour === 'down') throw new Error('ECONNREFUSED');
-      return { title: `DMS ${id}`, filename: 'a.pdf', url: 'https://dms.test/a' };
-    },
-    async upload() {
-      if (behaviour === 'down') throw new Error('ECONNREFUSED');
-      return { taskId: 't' };
-    },
-  }));
-  try {
-    const expectReason = async (path, body, status, reason, label) => {
-      const r = await call('POST', path, body);
-      assert.deepEqual([r.status, r.body?.reason], [status, reason], `${label}: ${JSON.stringify(r.body)}`);
-    };
-    await expectReason('/dms/link', { account_id: GONE, dms_document_id: '1' }, 404, 'dms_account_not_found', 'link, Konto weg');
-    await expectReason('/dms/push', { account_id: GONE, document_id: 1 }, 404, 'dms_account_not_found', 'push, Konto weg');
-    assert.equal((await call('POST', '/dms/link', { account_id: account, dms_document_id: '7' })).status, 201);
-    await expectReason('/dms/link', { account_id: account, dms_document_id: '7' }, 409, 'dms_document_already_linked', 'link doppelt');
-    behaviour = 'gone';
-    await expectReason('/dms/link', { account_id: account, dms_document_id: '8' }, 404, 'dms_document_not_found', 'link, im DMS geloescht');
-    behaviour = 'down';
-    await expectReason('/dms/link', { account_id: account, dms_document_id: '9' }, 502, 'dms_unreachable', 'link, DMS weg');
-    const local = await documentRow({ name: 'Lokal' });
-    await expectReason('/dms/push', { account_id: account, document_id: local }, 502, 'dms_unreachable', 'push, DMS weg');
-    behaviour = 'ok';
-    await expectReason('/dms/push', { account_id: account, document_id: GONE }, 404, 'documents_document_not_found', 'push, Dokument weg');
-    const linked = db.prepare("SELECT id FROM family_documents WHERE storage_backend = 'dms'").get().id;
-    await expectReason('/dms/push', { account_id: account, document_id: linked }, 400, 'dms_document_already_stored', 'push, schon im DMS');
-  } finally {
-    _setAdapterFactory(null);
-  }
-});
 
-test('Server: DMS verknuepfen - was NACH der Antwort des DMS lokal scheitert, ist kein "DMS nicht erreichbar"', async () => {
-  // Codex an #1994: das catch der Route deckte auch das lokale Einfuegen.
-  const account = db.prepare(`INSERT INTO dms_accounts (provider, name, base_url, api_token)
-    VALUES ('paperless', 'Lokal', 'https://dms-local.test', 'token')`).run().lastInsertRowid;
-  let during = null;
-  _setAdapterFactory(() => ({
-    async getDocument(id) {
-      during?.();
-      // Ohne Titel scheitert das Einfuegen an NOT NULL - ein lokaler Fehler.
-      return { title: id === 'ohne-titel' ? null : `DMS ${id}`, filename: 'a.pdf', url: 'https://dms-local.test/a' };
-    },
-  }));
-  try {
-    let r = await call('POST', '/dms/link', { account_id: account, dms_document_id: 'ohne-titel' });
-    assert.equal(r.status, 500, JSON.stringify(r.body));
-    assert.equal(r.body?.reason, undefined, 'kein Grund, der dem DMS die Schuld gibt');
-    // Das Konto verschwindet, waehrend das DMS antwortet.
-    during = () => db.prepare('DELETE FROM dms_accounts WHERE id = ?').run(account);
-    r = await call('POST', '/dms/link', { account_id: account, dms_document_id: '1' });
-    assert.deepEqual([r.status, r.body?.reason], [404, 'dms_account_not_found'], JSON.stringify(r.body));
-  } finally {
-    _setAdapterFactory(null);
-  }
-});
 
 const SERVER_REASONS = [
   ...new Set(SERVER_GONE.map((c) => c[3])),
   'documents_selected_folder_not_found', 'documents_folder_exists', 'documents_folder_too_deep',
   'documents_file_type_not_allowed', 'documents_file_content_mismatch', 'documents_file_empty',
-  'documents_storage_failed', 'dms_account_not_found', 'dms_document_already_linked',
-  'dms_document_not_found', 'dms_unreachable', 'dms_document_already_stored',
+  'documents_storage_failed',
 ];
 
 test('Server: jeder Grund der Dokumente hat einen Satz, und jeder "gibt es nicht mehr" laedt nach', () => {
@@ -306,7 +235,7 @@ test('Server: jeder Grund der Dokumente hat einen Satz, und jeder "gibt es nicht
     assert.equal(GONE_REASONS.has(reason), reason.endsWith('_not_found'), reason);
   }
   assert.deepEqual(CASE_PARAMS.get('documents_folder_too_deep'), ['limit']);
-  assert.deepEqual([...CASE_MESSAGES.keys()].filter((r) => /^(documents|dms)_/.test(r)).sort(), [...SERVER_REASONS].sort(),
+  assert.deepEqual([...CASE_MESSAGES.keys()].filter((r) => /^documents_/.test(r)).sort(), [...SERVER_REASONS].sort(),
     'ein Grund in CASE_MESSAGES, den kein Server dieser Suite nennt');
   // Der aeltere Grund des Ordner-Loeschens erreicht auch Anlegen, Umbenennen
   // und Verschieben - dort ohne den eigenen Weg des Loeschdialogs.
@@ -332,7 +261,7 @@ async function mitSeite({ container: given = null, ...patch }, fn) {
   const zuvor = { ...s, selected: new Set(s.selected) };
   Object.assign(s, {
     currentUserId: 1, isAdmin: true, allDocuments: [{ ...DOC }], documents: [{ ...DOC }], folders: FOLDERS.map((f) => ({ ...f })),
-    members: [], directory: [], dmsAccounts: [], status: 'active', query: '', queryText: '', category: '', folderId: '',
+    members: [], directory: [], status: 'active', query: '', queryText: '', category: '', folderId: '',
     expiringSoon: false, selectMode: false, selected: new Set(), view: 'list',
   }, patch);
   // Ohne eigenen Traeger: eine Seite, die gerade angezeigt wird (im DOM).
@@ -588,41 +517,6 @@ test('Seite: mehrere loeschen, eines ist schon weg - nachgeladen wird erst, wenn
   });
 });
 
-test('Seite: an ein DMS senden und aus einem DMS verknuepfen - die Faelle des DMS als Satz der App', async () => {
-  const account = { id: 1, name: 'Paperless' };
-  for (const [err, expected, gone] of [
-    [fehler(404, 'dms_account_not_found'), 'documents.errorDmsAccountGone', true],
-    [fehler(404, 'documents_document_not_found'), 'documents.errorDocumentGone', true],
-    [fehler(400, 'dms_document_already_stored'), 'documents.errorDmsAlreadyStored', false],
-    [fehler(502, 'dms_unreachable'), 'documents.dmsSearchError', false],
-    [fehler(502, 'documents_storage_failed'), 'documents.errorStorageFailed', false],
-    [fehler(500), 'common.unknownError', false],
-  ]) {
-    const { gets } = await mitSeite({ dmsAccounts: [account] }, () => mit({ post: async () => { throw err; } },
-      () => page.runDocumentAction('push-dms', { ...DOC })));
-    assert.deepEqual(toasts, [[expected, 'danger']], `push ${err.status} ${err.data.reason ?? ''}`);
-    assert.equal(reloaded(gets), gone, `push: nachgeladen ${gets.join(', ')}`);
-    // Das Konto ist weg: die Seite fragt auch die Konten neu.
-    assert.equal(gets.includes('/documents/meta/options'), gone, `push: Konten frisch ${gets.join(', ')}`);
-    assertNoServerText();
-  }
-  for (const [err, expected, gone] of [
-    [fehler(409, 'dms_document_already_linked'), 'documents.errorDmsAlreadyLinked', false],
-    [fehler(404, 'dms_document_not_found'), 'documents.errorDmsDocumentGone', true],
-    [fehler(404, 'dms_account_not_found'), 'documents.errorDmsAccountGone', true],
-    [fehler(502, 'dms_unreachable'), 'documents.dmsSearchError', false],
-    [fehler(500), 'common.unknownError', false],
-  ]) {
-    let ok = null;
-    const { gets, closed } = await mitSeite({ dmsAccounts: [account] }, () => mit({ post: async () => { throw err; } },
-      async () => { ok = await page.linkDmsDocument({ id: '7' }, account.id); }));
-    assert.equal(ok, false, 'der Knopf wird wieder bedienbar');
-    assert.deepEqual(toasts, [[expected, 'danger']], `link ${err.status} ${err.data.reason ?? ''}`);
-    assert.equal(closed.length, gone ? 1 : 0, 'der Verknuepfen-Dialog geht nur zu, wenn sein Stand veraltet ist');
-    assert.equal(reloaded(gets), gone, `link: nachgeladen ${gets.join(', ')}`);
-    assertNoServerText();
-  }
-});
 
 // --- Formular des Dokuments -----------------------------------------------
 
@@ -770,12 +664,6 @@ test('Seite: "gibt es nicht mehr", und inzwischen ist ein anderer Dialog offen -
     assert.deepEqual(speichern.closed, [], 'Speichern: der fremde Dialog bleibt offen');
     assert.ok(reloaded(speichern.gets), 'nachgeladen wird trotzdem');
 
-    modal = 'dialog-der-handlung';
-    const verknuepfen = await mitSeite({ dmsAccounts: [{ id: 1, name: 'Paperless' }] }, () => mit({
-      post: async () => { modal = 'ein-anderer-dialog'; throw fehler(404, 'dms_document_not_found'); },
-    }, () => page.linkDmsDocument({ id: '7' }, 1)));
-    assert.deepEqual(verknuepfen.closed, [], 'Verknuepfen: der fremde Dialog bleibt offen');
-
     // Gegenfall: derselbe Dialog ist noch offen - er geht zu.
     modal = 'dialog-der-handlung';
     const gleich = await mitSeite({}, () => mit({ put: async () => { throw fehler(404, 'documents_document_not_found'); } },
@@ -804,14 +692,13 @@ test('Seite: Erfolg nach Dialogwechsel - jeder Erfolgsweg schliesst nur mit dem 
       try { page.openFolderModal(); } finally { delete globalThis.__openModal; }
       await submit({ preventDefault() {} });
     }],
-    ['aus dem DMS verknuepfen', () => page.linkDmsDocument({ id: '7' }, 1)],
   ];
   for (const [name, lauf] of wege) {
     let kontext = 'eigener-dialog';
     globalThis.__modalContextId = () => kontext;
     const wechsel = (antwort) => { kontext = 'ein-anderer-dialog'; return antwort; };
     try {
-      const { closed } = await mitSeite({ dmsAccounts: [{ id: 1, name: 'Paperless' }] }, () => mit({
+      const { closed } = await mitSeite({  }, () => mit({
         put: () => wechsel({ data: { ...DOC } }),
         post: () => wechsel({ data: { id: 77 } }),
       }, lauf));
@@ -922,7 +809,6 @@ test('Seite: die Seite wird WAEHREND des Nachladens nach einer Handlung verlasse
     ['archivieren (Auswahl)', { selected: new Set([DOC.id]), selectMode: true }, () => page.archiveSelected()],
     ['verschieben (Auswahl)', { selected: new Set([DOC.id]), selectMode: true }, () => page.moveSelected()],
     ['speichern (Dialog)', {}, () => page.saveDocument({ target: formular(BEARBEITEN), preventDefault() {} }, { ...DOC }, formular())],
-    ['aus dem DMS verknuepfen', { dmsAccounts: [{ id: 1, name: 'Paperless' }] }, () => page.linkDmsDocument({ id: '7' }, 1)],
   ];
   let refocus = 0;
   globalThis.__refocusAfterRender = () => { refocus += 1; };
@@ -1035,7 +921,7 @@ test('Seite (#2005): die spaete Metadaten-Antwort einer verlassenen Seite - wede
       let runde = 0;
       await mit({
         get: () => (runde === 0 ? altMeta.promise : {
-          data: { dms_accounts: [{ id: 9, name: 'Paperless' }], active_upload_backend: 'dms', is_admin: false },
+          data: { active_upload_backend: 'google_drive', is_admin: false },
         }),
       }, async () => {
         const ersteSeite = page.loadMetaOptions();
@@ -1043,15 +929,15 @@ test('Seite (#2005): die spaete Metadaten-Antwort einer verlassenen Seite - wede
         page.setContainerForTest(neu, { built: true });
         await page.loadMetaOptions();
         if (ausgang === 'antwortet') {
-          altMeta.resolve({ data: { dms_accounts: [], active_upload_backend: 'local', is_admin: true } });
+          altMeta.resolve({ data: { active_upload_backend: 'local', is_admin: true } });
         } else {
           altMeta.reject(fehler(500));
         }
         await ersteSeite;
       });
       assert.deepEqual(
-        [page.state.dmsAccounts.map((a) => a.id), page.state.activeUploadBackend, page.state.isAdmin],
-        [[9], 'dms', false],
+        [page.state.activeUploadBackend, page.state.isAdmin],
+        ['google_drive', false],
         `${ausgang}: der Stand der neuen Seite`,
       );
     });

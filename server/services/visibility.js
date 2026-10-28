@@ -161,13 +161,13 @@ export const HOUSEHOLD_AUDIENCE_SHOWS = Object.freeze({
   birthdays: true,
   urgentTasks: true,
   tasksDoneToday: true,
-  todayMeals: true,
+
   // Die Titel unter jeder Person (#1817).
   wallTasks: true,
   // Die Schlusszeile „n Artikel offen" - die Zahl, nicht die Listen.
-  shoppingOpenCount: true,
+
   wastePickups: true,
-  pantryExpiring: Object.freeze(['todayItems', 'todayCount']),
+
   housekeeping: Object.freeze(['present', 'presentSince', 'workerName']),
 });
 

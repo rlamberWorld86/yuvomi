@@ -136,7 +136,7 @@ test('die Unterzeile nennt fuer ein Konto ohne Passwort kein Passwort', () => {
     assert.equal(settingsLeafDescription(leaf, key, user), 'settings.pageAccountDescription', JSON.stringify(user));
   }
   // Ein anderes Blatt bleibt unberuehrt, auch fuer ein SSO-Konto.
-  const other = SETTINGS_LEAVES.find((l) => l.id === 'personal-appearance');
+  const other = SETTINGS_LEAVES.find((l) => l.id === 'personal-device');
   assert.equal(settingsLeafDescription(other, key, { sso_only: true }), other.descriptionKey);
   assert.equal(typeof de.settings.pageAccountDescriptionSsoOnly, 'string');
   assert.doesNotMatch(de.settings.pageAccountDescriptionSsoOnly, /Passwort/);

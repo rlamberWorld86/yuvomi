@@ -16,7 +16,6 @@ import { renderPageSearch, wirePageSearch } from '/utils/page-search.js';
 import { previewKind } from '/utils/document-preview.js';
 import { fileShareSupport } from '/utils/web-share.js';
 import { attachOverlay } from '/utils/overlay-history.js';
-import { inertOutside } from '/utils/background-inert.js';
 import { findPageFab } from '/utils/fab.js';
 import { rowActionHtml } from '/utils/row-action.js';
 // Im Solo-Haushalt hat „Wer darf das sehen" genau eine Antwort - gefragt wird
@@ -173,9 +172,7 @@ function stillShown(owner) {
 async function reportError(err, { owner = null, dialog = null } = {}) {
   window.yuvomi?.showToast(errorText(err), 'danger');
   if (!isGone(err)) return;
-  // Nachladen nach "gibt es nicht mehr". Die DMS-Konten kommen mit: ein Konto,
-  // das ein Admin entfernt hat, stuende sonst weiter im Menue. Ein scheiterndes
-  // Nachladen meldet nichts weiter - der Satz steht schon da.
+  // Refresh missing records; the original error has already been shown.
   // Wie deleteDocuments: wer die Seite inzwischen verlassen hat, bekommt
   // nichts mehr gezeichnet (Review zu #1994). `owner` merkt die Aufrufstelle
   // VOR ihrer Anfrage: hier gelesen, waere es nach "verlassen und zurueck"
@@ -189,7 +186,6 @@ async function reportError(err, { owner = null, dialog = null } = {}) {
     return;
   }
   if (!stillShown(owner)) return;
-  renderDmsHeaderBtn();
   renderAll();
   refocusAfterRender();
 }
@@ -254,7 +250,6 @@ let state = {
   members: [],
   // Wer hier sitzt - fuer die Besitzregel (mayManage). Aus dem Router-Kontext.
   currentUserId: null,
-  dmsAccounts: [],
   activeUploadBackend: 'local',
   // DIE LISTE IST DER DEFAULT, AUCH AM DESKTOP (R22, D11). Mobil seit der
   // Critique 2026-08-27 (P2: die Grid-Karte kostete bei 375px ~260px je
@@ -385,11 +380,6 @@ export async function render(container, context = {}) {
         <h1 class="page-toolbar__title">${t('documents.title')}</h1>
         ${renderPageSearch({ id: 'documents-search', label: t('documents.searchPlaceholder'), placeholder: t('documents.searchPlaceholder'), value: state.query, clearLabel: t('common.searchClear'), className: 'documents-toolbar__search page-toolbar__center' })}
         <div class="page-toolbar__actions">
-          <button class="btn btn--secondary documents-dms-link-btn" id="documents-dms-link-btn" type="button"
-                  title="${t('documents.linkFromDms')}" aria-label="${t('documents.linkFromDms')}" hidden>
-            <i data-lucide="link" class="icon-md" aria-hidden="true"></i>
-            <span class="documents-dms-link-btn__label">${t('documents.linkFromDms')}</span>
-          </button>
           ${/* DIE ANSICHTSWAHL IST DAS KANON-SEGMENT (D1, Critique 2026-10-16):
                 `.segmented` in der Icon-Variante statt einer runden Eigen-Pille
                 - dieselbe Form wie Aufgaben und Kalender. */ ''}
@@ -508,7 +498,6 @@ export async function render(container, context = {}) {
   // Antwort zeichnet nicht in eine Seite, die sie nicht mehr ist.
   if (!stillShown(container)) return;
   _built = container;
-  renderDmsHeaderBtn();
   bindPageEvents();
   renderCategoryChips();
   renderExpiringChip();
@@ -601,7 +590,6 @@ async function loadFolders() {
 async function loadMetaOptions() {
   try {
     return await applyLatestMetaOptionsResponse(() => api.get('/documents/meta/options'), (res) => {
-      state.dmsAccounts = res.data?.dms_accounts || [];
       state.activeUploadBackend = res.data?.active_upload_backend || 'google_drive';
       state.isAdmin = res.data?.is_admin === true;
       // Grenzwerte vom Server übernehmen, statt sie im Client zu duplizieren -
@@ -611,7 +599,6 @@ async function loadMetaOptions() {
     });
   } catch {
     // Hier kommt nur die juengste Anfrage an: eine ueberholte scheitert still.
-    state.dmsAccounts = [];
     state.activeUploadBackend = 'google_drive';
     state.isAdmin = false;
     state.maxFileSize = maxUploadBytes();
@@ -640,15 +627,6 @@ function skipToDocuments(event) {
 
 // Der Button liegt fest im Markup (hidden) und wird hier nur freigeschaltet —
 // so verschiebt das Nachladen der Konten die Kopfzeile nicht mehr.
-function renderDmsHeaderBtn() {
-  const btn = _container.querySelector('#documents-dms-link-btn');
-  if (!btn) return;
-  btn.hidden = !state.dmsAccounts.length;
-  if (!btn.hidden && !btn.dataset.wired) {
-    btn.dataset.wired = 'true';
-    btn.addEventListener('click', () => openDmsLinkModal());
-  }
-}
 
 function matchesCategory(doc) {
   return !state.category || doc.category === state.category;
@@ -1747,7 +1725,6 @@ function openDocumentMenu(doc, anchorBtn) {
   // gibt es den Kebab gar nicht (renderActions) und das Auge bleibt stehen.
   if (!mayManage(doc)) return;
   const archived = doc.status === 'archived';
-  const canPushDms = documentStorageBackend(doc) !== 'dms' && state.dmsAccounts.length > 0;
   // ANSEHEN STEHT HIER, WENN DIE LEISTE ES NICHT ZEIGT. Die kompakte Zeile
   // (unter 30rem) traegt kein Auge mehr - ein Tipp auf die Zeile oeffnet den
   // Betrachter (Re-Critique 2026-09-25). Die Zeile ist aber kein Tab-Stopp;
@@ -1769,10 +1746,6 @@ function openDocumentMenu(doc, anchorBtn) {
     <button class="documents-context-menu__item" type="button" role="menuitem" data-menu-action="archive">
       <i data-lucide="${archived ? 'archive-restore' : 'archive'}" aria-hidden="true"></i><span>${archived ? t('documents.restoreAction') : t('documents.archiveAction')}</span>
     </button>
-    ${canPushDms ? `
-    <button class="documents-context-menu__item" type="button" role="menuitem" data-menu-action="push-dms">
-      <i data-lucide="upload" aria-hidden="true"></i><span>${t('documents.pushToDms')}</span>
-    </button>` : ''}
     <div class="popover-menu__separator" role="separator"></div>
     <button class="documents-context-menu__item documents-context-menu__item--danger" type="button" role="menuitem" data-menu-action="delete">
       <i data-lucide="trash-2" aria-hidden="true"></i><span>${t('common.delete')}</span>
@@ -2026,11 +1999,6 @@ function renderMeta(doc, { showSize = true, stats = '' } = {}) {
 // Kompaktes Vorschaubild (Issue #533): nur DMS-Dokumente mit vorhandenem Konto,
 // deren Provider Thumbnails liefert. Papra hat keinen Thumb-Endpoint -> gar nicht
 // erst anfragen, damit keine ins Leere laufenden 415-Requests entstehen.
-function docSupportsThumbnail(doc) {
-  return documentStorageBackend(doc) === 'dms'
-    && Boolean(doc.dms_account_id)
-    && doc.dms_provider === 'paperless';
-}
 
 // Icon-Slot einer Karte: Kategorie-Glyph, plus (bei Thumbnail-Support) ein Bild,
 // das nach erfolgreichem Laden das Glyph ersetzt. Schlägt das Laden fehl, bleibt
@@ -2039,13 +2007,8 @@ function docSupportsThumbnail(doc) {
 // die es verdecken kann.
 function renderDocIconSlot(doc) {
   const icon = `<i data-lucide="${CATEGORY_ICONS[doc.category] || 'file'}" aria-hidden="true"></i>`;
-  const dms = docSupportsThumbnail(doc);
-  if (!dms && !documentThumbKind(doc)) return icon;
-  const glyph = `<span class="document-thumb__glyph" data-thumb-icon>${icon}</span>`;
-  if (!dms) return glyph;
-  return glyph
-    + `<img class="document-thumb__img" data-thumb="clickable" src="/api/v1/documents/${doc.id}/thumbnail"`
-    + ` alt="" loading="lazy" width="42" height="42" hidden>`;
+  if (!documentThumbKind(doc)) return icon;
+  return `<span class="document-thumb__glyph" data-thumb-icon>${icon}</span>`;
 }
 
 /* Der Rahmen eines Vorschaubilds, in Zeile (42px-Kachel) und Karte (grosse
@@ -2221,15 +2184,7 @@ function storageBadgeHtml(doc) {
   if (backend === 'google_drive') {
     return `<span class="doc-badge doc-badge--google-drive"><i data-lucide="cloud" aria-hidden="true"></i>${t('documents.storageGoogleDrive')}</span>`;
   }
-  if (backend === 'dms' && !doc.dms_account_id) {
-    return `<span class="doc-badge doc-badge--unavailable"><i data-lucide="unplug" aria-hidden="true"></i>${t('documents.storageDmsUnavailable')}</span>`;
-  }
-  if (backend === 'dms') {
-    return `<span class="doc-badge doc-badge--dms"><i data-lucide="archive" aria-hidden="true"></i>${t('documents.storageDms')}</span>`;
-  }
-  // Folder-backed local documents carry a storage_key; they are a non-default
-  // target and earn a badge. The in-DB BLOB default (no key) stays badge-less so
-  // a badge remains a meaningful signal.
+
   if (backend === 'local' && doc.storage_key) {
     return `<span class="doc-badge doc-badge--folder"><i data-lucide="hard-drive" aria-hidden="true"></i>${t('documents.storageLocalFolder')}</span>`;
   }
@@ -2420,27 +2375,6 @@ async function runDocumentAction(action, doc) {
     } catch (err) {
       reportError(err, { owner });
     }
-  }
-  if (action === 'push-dms') {
-    if (!state.dmsAccounts.length) return;
-    let accountId = state.dmsAccounts[0].id;
-    if (state.dmsAccounts.length > 1) {
-      // Bei mehreren DMS-Konten Ziel auswählen lassen (promise-basiertes Auswahl-Modal
-      // ohne Dirty-Check, Abbruch → null).
-      accountId = await selectModal(
-        t('documents.pushToDms'),
-        state.dmsAccounts.map((account) => ({ value: account.id, label: account.name })),
-      );
-      if (!accountId) return;
-    }
-    const owner = _container;
-    try {
-      await api.post('/documents/dms/push', { account_id: accountId, document_id: doc.id });
-      window.yuvomi?.showToast(t('documents.pushToDmsQueued'), 'success');
-    } catch (err) {
-      reportError(err, { owner });
-    }
-    return;
   }
   if (action === 'delete') deleteDocuments([doc]);
 }
@@ -2698,7 +2632,7 @@ export const __test = {
   renameFolder, moveFolder, deleteFolder, enterSelectMode, toggleSelectAll,
   archiveSelected, moveSelected, selectedDocuments, viewerDetailsHtml, saveDocument,
   // #1909: die Fehlerwege der Seite (test:documents-errors).
-  linkDmsDocument, folderUploadFailureText,
+  folderUploadFailureText,
 };
 
 function openDocumentModal(doc = null) {
@@ -3681,375 +3615,6 @@ function openFolderModal({ parentId = null } = {}) {
   });
 }
 
-// --------------------------------------------------------
-// DMS Link Modal
-// --------------------------------------------------------
-
-function openDmsLinkModal() {
-  if (readOnly()) return;
-  if (!state.dmsAccounts.length) return;
-  openSharedModal({
-    title: t('documents.linkFromDms'),
-    size: 'md',
-    content: '<div id="dms-modal-root"></div>',
-    onSave(panel) {
-      const root = panel.querySelector('#dms-modal-root');
-      if (!root) return;
-
-      let selectedAccountId = state.dmsAccounts[0].id;
-
-      // ASN-Hinweis ist Paperless-spezifisch (Discussion #511): nur einblenden,
-      // wenn das aktive Konto ein Paperless-ngx ist (Papra kennt keine ASN).
-      const providerOf = (id) => state.dmsAccounts.find((a) => String(a.id) === String(id))?.provider;
-      const hint = document.createElement('p');
-      hint.className = 'form-hint dms-search-hint';
-      hint.textContent = t('documents.dmsAsnHint');
-      const syncHint = () => { hint.hidden = providerOf(selectedAccountId) !== 'paperless'; };
-
-      // Account selector — only render when multiple accounts exist
-      if (state.dmsAccounts.length > 1) {
-        const accountLabel = document.createElement('label');
-        accountLabel.className = 'label';
-        accountLabel.setAttribute('for', 'dms-account-select');
-        accountLabel.textContent = t('documents.dmsAccountLabel');
-
-        const accountSelect = document.createElement('select');
-        accountSelect.className = 'input dms-account-select';
-        accountSelect.id = 'dms-account-select';
-        for (const account of state.dmsAccounts) {
-          const option = document.createElement('option');
-          option.value = account.id;
-          option.textContent = account.name;
-          accountSelect.appendChild(option);
-        }
-
-        accountSelect.addEventListener('change', () => {
-          selectedAccountId = accountSelect.value;
-          syncHint();
-          // Re-run listing for the new account (empty query lists all documents).
-          runDmsSearch(input.value.trim());
-        });
-
-        root.append(accountLabel, accountSelect);
-      }
-
-      // Sichtbares Label statt Placeholder-only: der Placeholder verschwindet beim
-      // Tippen und ist kein Label-Ersatz für Screenreader. Das Feld selbst ist
-      // das geteilte Suchfeld (renderPageSearch, Komponenten-Kanon Runde 5); es
-      // traegt den Namen schon als eigenes <label>, die sichtbare Zeile darueber
-      // ist deshalb nur Beschriftung (aria-hidden), sonst hiesse das Feld doppelt.
-      const searchLabel = document.createElement('p');
-      searchLabel.className = 'label';
-      searchLabel.setAttribute('aria-hidden', 'true');
-      searchLabel.textContent = t('documents.dmsSearchLabel');
-
-      const searchHost = document.createElement('div');
-      searchHost.insertAdjacentHTML('beforeend', renderPageSearch({
-        id: 'dms-search',
-        label: t('documents.dmsSearchLabel'),
-        placeholder: t('documents.dmsSearchPlaceholder'),
-        clearLabel: t('common.searchClear'),
-      }));
-      const searchField = searchHost.firstElementChild;
-      const input = searchField.querySelector('#dms-search');
-
-      const results = document.createElement('ul');
-      results.id = 'dms-results';
-      results.className = 'dms-results';
-      results.setAttribute('aria-busy', 'false');
-
-      root.append(searchLabel, searchField, hint, results);
-      syncHint();
-
-      // Ein Netzwerk-/Serverfehler ist kein leeres Suchergebnis: der alte Code
-      // zeigte für beides „Keine Treffer im DMS", sodass ein toter DMS-Server wie
-      // ein leerer aussah. Fehler bekommen jetzt eigene Copy und einen Retry.
-      const showSearchError = (q) => {
-        results.replaceChildren();
-        const li = document.createElement('li');
-        li.className = 'dms-results__error';
-        li.setAttribute('role', 'alert');
-        const text = document.createElement('span');
-        text.textContent = t('documents.dmsSearchError');
-        const retry = document.createElement('button');
-        retry.type = 'button';
-        retry.className = 'btn btn--secondary btn--sm';
-        retry.textContent = t('common.retry');
-        retry.addEventListener('click', () => runDmsSearch(q));
-        li.append(text, retry);
-        results.appendChild(li);
-      };
-
-      const runDmsSearch = async (q) => {
-        results.setAttribute('aria-busy', 'true');
-        results.replaceChildren();
-        const loading = document.createElement('li');
-        loading.className = 'form-hint';
-        loading.textContent = t('documents.dmsSearching');
-        results.appendChild(loading);
-        try {
-          const res = await api.get(`/documents/dms/search?account_id=${selectedAccountId}&q=${encodeURIComponent(q)}`);
-          renderDmsResults(results, res.data, selectedAccountId);
-        } catch {
-          showSearchError(q);
-        } finally {
-          results.setAttribute('aria-busy', 'false');
-        }
-      };
-
-      // Leere Eingabe listet alle Dokumente (statt zu leeren), damit der Nutzer
-      // ohne exakte Suchbegriffe durchblättern kann (Issue #449) - auch nach
-      // dem Leeren-Knopf des Feldes.
-      wirePageSearch(root, { id: 'dms-search', delay: 300, onQuery: (q) => runDmsSearch(q.trim()) });
-      if (window.lucide) lucide.createIcons({ el: root });
-
-      // Beim Öffnen bereits die volle Dokumentliste zeigen.
-      runDmsSearch('');
-
-      setTimeout(() => input.focus(), 60);
-    },
-  });
-}
-
-function renderDmsResults(container, items, accountId) {
-  container.replaceChildren();
-  if (!items || !items.length) {
-    const li = document.createElement('li');
-    li.className = 'form-hint';
-    li.textContent = t('documents.dmsNoResults');
-    container.appendChild(li);
-    return;
-  }
-  const provider = state.dmsAccounts.find((a) => String(a.id) === String(accountId))?.provider;
-  const supportsThumb = provider === 'paperless';
-  for (const item of items) {
-    const li = document.createElement('li');
-    li.className = 'dms-result';
-
-    // Vorschau (Issue #533, vergrößert in #536): Thumbnail der ersten Seite im
-    // Seitenformat statt als Briefmarke, mit Glyph-Fallback. Ein Klick öffnet die
-    // große Vorschau im Modal - erst dort entscheidet man, ob es das richtige
-    // Dokument ist. Ohne Thumbnail bleibt es beim Direktlink ins DMS.
-    const canOpen = /^https?:\/\//i.test(item.url || '');
-    let media;
-    if (supportsThumb) {
-      media = document.createElement('button');
-      media.type = 'button';
-      media.className = 'dms-result__media dms-result__media--action';
-      setMediaAffordance(media, t('documents.dmsPreviewOpen'));
-      media.addEventListener('click', () => {
-        const thumb = media.querySelector('img[data-thumb]');
-        if (thumb && !thumb.hidden) {
-          openDmsPreview({ item, src: thumb.src, canOpen, onLink: () => linkDmsDocument(item, accountId) });
-        } else if (canOpen) {
-          window.open(item.url, '_blank', 'noopener,noreferrer');
-        }
-      });
-    } else if (canOpen) {
-      media = document.createElement('a');
-      media.className = 'dms-result__media dms-result__media--link';
-      media.href = item.url;
-      media.target = '_blank';
-      media.rel = 'noopener noreferrer';
-      setMediaAffordance(media, t('documents.dmsOpenExternal'));
-    } else {
-      media = document.createElement('span');
-      media.className = 'dms-result__media';
-    }
-    media.insertAdjacentHTML('beforeend', `<span class="dms-result__glyph" data-thumb-icon><i data-lucide="file-text" aria-hidden="true"></i></span>`);
-    if (supportsThumb) {
-      const img = document.createElement('img');
-      img.className = 'dms-result__thumb';
-      img.dataset.thumb = '';
-      img.loading = 'lazy';
-      img.alt = '';
-      img.width = 72;
-      img.height = 96;
-      img.hidden = true;
-      img.src = `/api/v1/documents/dms/thumbnail?account_id=${encodeURIComponent(accountId)}&dms_document_id=${encodeURIComponent(item.id)}`;
-      // Ohne Thumbnail gibt es nichts zu vergrößern: die Kachel fällt auf den
-      // DMS-Direktlink zurück bzw. wird zur reinen Anzeige.
-      img.addEventListener('error', () => {
-        if (canOpen) setMediaAffordance(media, t('documents.dmsOpenExternal'));
-        else {
-          media.disabled = true;
-          media.removeAttribute('title');
-          media.removeAttribute('aria-label');
-        }
-      }, { once: true });
-      media.appendChild(img);
-    }
-    if (supportsThumb || canOpen) {
-      // Ein Lupen- bzw. Oeffnen-Symbol in der Ecke der Vorschau, dauerhaft
-      // sichtbar (R8 H14) - bis dahin tauchte es nur beim Ueberfahren auf.
-      const glyph = supportsThumb ? 'zoom-in' : 'external-link';
-      media.insertAdjacentHTML('beforeend', `<span class="dms-result__open" aria-hidden="true"><i data-lucide="${glyph}"></i></span>`);
-    }
-
-    const text = document.createElement('span');
-    text.className = 'dms-result__text';
-    const label = document.createElement('span');
-    label.className = 'dms-result__title';
-    label.textContent = item.title;
-    text.appendChild(label);
-    const typeLabel = fileTypeLabel(item.filename);
-    const sub = [item.filename, typeLabel].filter((v) => v && v !== item.title).join(' · ');
-    if (sub) {
-      const subEl = document.createElement('span');
-      subEl.className = 'dms-result__sub';
-      subEl.textContent = sub;
-      text.appendChild(subEl);
-    }
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn btn--primary btn--sm';
-    btn.textContent = t('documents.dmsLinkBtn');
-
-    btn.addEventListener('click', async () => {
-      btn.disabled = true;
-      const ok = await linkDmsDocument(item, accountId);
-      if (!ok) btn.disabled = false;
-    });
-
-    li.append(media, text, btn);
-    container.appendChild(li);
-  }
-  if (window.lucide) lucide.createIcons({ el: container });
-  wireThumbnails(container);
-}
-
-// Titel und Screenreader-Label einer Vorschaukachel gemeinsam setzen - beide
-// beschreiben dieselbe Aktion und dürfen nie auseinanderlaufen.
-function setMediaAffordance(el, label) {
-  el.title = label;
-  el.setAttribute('aria-label', label);
-}
-
-// Verknüpft ein DMS-Dokument mit der Dokumentenliste. Gibt true bei Erfolg zurück,
-// damit der auslösende Button im Fehlerfall wieder bedienbar wird.
-async function linkDmsDocument(item, accountId) {
-  const modalContext = captureModalContext();
-  const owner = _container;
-  try {
-    // Feste, vorhersagbare Kategorie: früher erbte das verknüpfte Dokument
-    // stillschweigend das gerade aktive Filter-Chip, was nirgends stand.
-    // Anpassen geht danach über „Bearbeiten".
-    await api.post('/documents/dms/link', {
-      account_id: accountId,
-      dms_document_id: item.id,
-      category: 'other',
-      visibility: 'family',
-    });
-    // Nur den Verknuepfen-Dialog, nie einen inzwischen geoeffneten anderen (#1997).
-    closeModal({ force: true, context: modalContext });
-    await reloadAfterSave(() => loadDocuments());
-    if (!stillShown(owner)) return true;
-    renderAll({ motion: true });
-    refocusAfterRender();
-    return true;
-  } catch (err) {
-    // Der Verknuepfen-Dialog zeigt einen veralteten Stand, wenn das Konto
-    // oder das Dokument im DMS fehlt: dann geht er zu.
-    reportError(err, { owner, dialog: modalContext });
-    return false;
-  }
-}
-
-// Große Vorschau über dem Auswahl-Modal (Issue #536): die Kachel in der Liste
-// bleibt kompakt, das Dokument wird trotzdem lesbar geprüft, bevor man verknüpft.
-// Bewusst kein zweites openModal - das Modal-System hält genau ein Overlay.
-function openDmsPreview({ item, src, canOpen, onLink }) {
-  const panel = document.querySelector('#shared-modal-overlay .modal-panel');
-  if (!panel) return;
-  const opener = document.activeElement;
-
-  const layer = document.createElement('div');
-  layer.className = 'dms-preview';
-  layer.setAttribute('role', 'dialog');
-  layer.setAttribute('aria-modal', 'true');
-  layer.setAttribute('aria-label', item.title);
-
-  const box = document.createElement('div');
-  box.className = 'dms-preview__panel';
-
-  const header = document.createElement('div');
-  header.className = 'dms-preview__header';
-  header.dataset.dialogActions = '';
-  const heading = document.createElement('p');
-  heading.className = 'dms-preview__title';
-  heading.textContent = item.title;
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.className = 'dms-preview__close';
-  close.setAttribute('aria-label', t('common.close'));
-  close.insertAdjacentHTML('beforeend', '<i data-lucide="x" aria-hidden="true"></i>');
-  header.append(heading, close);
-
-  const figure = document.createElement('div');
-  figure.className = 'dms-preview__figure';
-  const img = document.createElement('img');
-  img.className = 'dms-preview__img';
-  img.src = src;
-  img.alt = '';
-  figure.appendChild(img);
-
-  const actions = document.createElement('div');
-  actions.className = 'dms-preview__actions';
-  actions.dataset.dialogActions = '';
-  if (canOpen) {
-    const open = document.createElement('a');
-    open.className = 'btn btn--secondary';
-    open.href = item.url;
-    open.target = '_blank';
-    open.rel = 'noopener noreferrer';
-    open.textContent = t('documents.dmsOpenExternal');
-    actions.appendChild(open);
-  }
-  const link = document.createElement('button');
-  link.type = 'button';
-  link.className = 'btn btn--primary';
-  link.textContent = t('documents.dmsLinkBtn');
-  link.addEventListener('click', async () => {
-    link.disabled = true;
-    const ok = await onLink();
-    if (!ok) link.disabled = false;
-  });
-  actions.appendChild(link);
-
-  box.append(header, figure, actions);
-  layer.appendChild(box);
-
-  let releaseBackground = () => {};
-  const dismiss = () => {
-    document.removeEventListener('keydown', onKey, true);
-    layer.remove();
-    releaseBackground();
-    opener?.focus?.();
-  };
-  // Wie bei Escape gilt fuer die Zurueck-Geste: sie schliesst zuerst die
-  // Vorschau, nicht die Auswahl darunter (#871).
-  attachOverlay(layer, dismiss);
-  // Capture-Phase: das Modal schließt auf Escape über einen Listener am document.
-  // Hier wird das Ereignis abgefangen, damit Escape zuerst nur die Vorschau
-  // schließt und nicht gleich die ganze Auswahl wegräumt.
-  const onKey = (e) => {
-    if (e.key !== 'Escape') return;
-    e.stopPropagation();
-    dismiss();
-  };
-  document.addEventListener('keydown', onKey, true);
-  close.addEventListener('click', dismiss);
-  layer.addEventListener('click', (e) => { if (e.target === layer) dismiss(); });
-
-  panel.appendChild(layer);
-  // Die Auswahl darunter ist gesperrt, solange die Vorschau offen ist
-  // (utils/background-inert.js); freigegeben VOR der Fokus-Rueckgabe.
-  releaseBackground = inertOutside(layer);
-  if (window.lucide) lucide.createIcons({ el: layer });
-  close.focus();
-}
-
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -4141,9 +3706,7 @@ function openDocumentViewer(doc, { opener: listOpener = null } = {}) {
   const downloadUrl = `/api/v1/documents/${doc.id}/download`;
   // Defense-in-Depth: nur http(s)-Deep-Links rendern, niemals javascript:/data:-Schemata
   // (zusätzlich zur serverseitigen base_url-Validierung bei der DMS-Account-Anlage).
-  const externalUrl = documentStorageBackend(doc) === 'dms' && /^https?:\/\//i.test(doc.external_url || '')
-    ? doc.external_url
-    : '';
+
 
   // pdf.js-Viewer hält Worker + Dokument im Speicher; beim Schließen freigeben.
   let pdfTeardown = null;
@@ -4232,11 +3795,6 @@ function openDocumentViewer(doc, { opener: listOpener = null } = {}) {
             ${nextDoc ? rowActionHtml({ icon: 'chevron-right', action: 'viewer-next', label: t('documents.viewerNextNamed', { name: nextDoc.name }), attrs: { 'aria-keyshortcuts': stepKeys.next, title: t('documents.viewerNextNamed', { name: nextDoc.name }) } }) : '<span class="row-action document-viewer__pager-edge" aria-hidden="true"><i data-lucide="chevron-right" class="icon-md"></i></span>'}
           </span>` : ''}
           <span class="document-viewer__actions">
-            ${externalUrl ? `
-            <a class="btn btn--ghost btn--sm doc-viewer__dms-link" href="${esc(externalUrl)}" target="_blank" rel="noopener noreferrer">
-              <i data-lucide="external-link" class="icon-md" aria-hidden="true"></i>
-              ${t('documents.dmsOpenExternal')}
-            </a>` : ''}
             ${previewKind(doc.mime_type) === 'pdf' ? `
             ${rowActionHtml({ icon: 'external-link', href: previewUrl, label: t('documents.openInTabNamed', { name: doc.name }), attrs: { target: '_blank', rel: 'noopener noreferrer', title: t('documents.viewerOpenInTab') } })}` : ''}
             ${mayManage(doc) ? `

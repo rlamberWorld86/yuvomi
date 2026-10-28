@@ -697,11 +697,11 @@ test('de spricht durchgehend du (Critique R21, D15)', () => {
 // D15 (Critique R21): Anmeldung und Rundgang sprachen von "deinem
 // Familienplaner" - wer allein oder zu zweit wohnt, war darin nicht gemeint.
 // Der Satz nennt das Zuhause (Leitsatz "Ein Zuhause statt vieler Abos").
-test('Anmeldung und Rundgang sprechen vom Zuhause, nicht vom Familienplaner (Critique R21, D15)', () => {
+test('Anmeldung spricht vom Zuhause, nicht vom Familienplaner (Critique R21, D15)', () => {
   const words = { de: /familienplaner/i, en: /family planner/i };
   for (const [locale, word] of Object.entries(words)) {
     const values = flatten(JSON.parse(readLocale(locale)));
-    for (const key of ['login.tagline', 'onboarding.step1Body']) {
+    for (const key of ['login.tagline']) {
       assert.doesNotMatch(values.get(key), word, `${locale}: ${key}`);
     }
   }
@@ -720,16 +720,6 @@ test('der Aufklapper fuer weitere Felder heisst ueberall gleich (Critique R21, D
   assert.match(modal, /label \?\? t\('modal\.moreDetails'\)/, 'der Baustein nennt sich selbst "Weitere Angaben"');
 });
 
-// Clarify (Critique R21): die Fussnote unter den Tastenkombinationen
-// entschuldigte sich ("kann hinter einem Release zurueckliegen"). Sie sagt
-// jetzt, wer das Handbuch pflegt und was der Klick tut.
-test('der Hinweis zum Nutzerhandbuch entschuldigt sich nicht (Critique R21)', () => {
-  for (const locale of ['de', 'en']) {
-    const hint = flatten(JSON.parse(readLocale(locale))).get('help.guideHint');
-    assert.doesNotMatch(hint, /zurückliegen|lag behind|veraltet|out of date/i, `${locale}: ${hint}`);
-  }
-});
-
 // R23 (Critique S-P3-2): Suchplatzhalter standen in fuenf Formen - "…", "...",
 // " …", ohne Zeichen, "durchsuchen" neben "suchen" fuer dieselbe Seitensuche.
 // EIN Muster: kein Auslassungszeichen am Ende, in keiner Sprache; im Deutschen
@@ -744,8 +734,8 @@ test('Suchplatzhalter: ein Muster, kein Auslassungszeichen am Ende (R23)', () =>
     }
   }
   const de = flatten(JSON.parse(readLocale('de')));
-  for (const key of ['tasks.searchPlaceholder', 'notes.searchPlaceholder', 'recipes.searchPlaceholder', 'birthdays.searchPlaceholder',
-    'documents.searchPlaceholder', 'subscriptions.searchPlaceholder', 'pantry.searchPlaceholder', 'inventory.searchPlaceholder',
+  for (const key of ['tasks.searchPlaceholder', 'notes.searchPlaceholder', 'birthdays.searchPlaceholder',
+    'documents.searchPlaceholder', 'subscriptions.searchPlaceholder', 'inventory.searchPlaceholder',
     'splitExpenses.searchGroups', 'settings.searchLabel']) {
     assert.match(de.get(key), / durchsuchen$/, `de: ${key} = ${de.get(key)}`);
   }

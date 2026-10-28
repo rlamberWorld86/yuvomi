@@ -4,13 +4,13 @@ import path from 'node:path';
 import { register } from 'node:module';
 import test from 'node:test';
 import { WIDGET_IDS, normalizeDashboardConfig } from '../public/utils/dashboard-widgets.js';
-import { BUILT_IN_MODULES, KITCHEN_CHILD_IDS } from '../public/settings/module-order.js';
+import { BUILT_IN_MODULES } from '../public/settings/module-order.js';
 import { SEARCH_SECTIONS, NEW_ACTIONS } from '../public/utils/search-sections.js';
 register('./test-browser-loader.mjs', import.meta.url);
 const { SETTINGS_LEAVES, SETTINGS_SECTIONS } = await import('../public/settings/registry.js');
 const { __test: dashboard, render: renderDashboard } = await import('../public/pages/dashboard.js');
 const { TODAY_SHEET_SOURCES } = await import('../public/utils/today-sheet.js');
-const retired = new Set(['rewards', 'schedule', 'inventory', 'housekeeping', 'waste', 'health', 'budget']);
+const retired = new Set(['rewards', 'schedule', 'inventory', 'housekeeping', 'waste', 'health', 'budget', 'kitchen', 'meals', 'recipes', 'shopping', 'pantry']);
 
 test('saved dashboard layouts discard retired widgets and preserve retained preferences', () => {
   const config = normalizeDashboardConfig([
@@ -25,7 +25,6 @@ test('saved dashboard layouts discard retired widgets and preserve retained pref
 });
 
 test('navigation, search and today-sheet catalogs retain only installed core modules', () => {
-  assert.deepEqual(KITCHEN_CHILD_IDS, ['meals', 'recipes', 'shopping', 'pantry']);
   for (const entry of [...BUILT_IN_MODULES, ...SEARCH_SECTIONS, ...NEW_ACTIONS, ...TODAY_SHEET_SOURCES]) {
     assert.ok(!retired.has(entry.module ?? entry.id), JSON.stringify(entry));
   }
@@ -35,11 +34,12 @@ test('navigation, search and today-sheet catalogs retain only installed core mod
 });
 
 test('settings registry has no orphan sections or retired integrations', () => {
+  assert.ok(!SETTINGS_SECTIONS.some((section) => section.id === 'documents-dms'));
   const ids = new Set(SETTINGS_LEAVES.map((leaf) => leaf.id));
   for (const section of SETTINGS_SECTIONS) assert.ok(ids.has(section.sheetId), section.id);
   for (const leaf of SETTINGS_LEAVES) {
     assert.ok(!retired.has(leaf.module), leaf.id);
-    assert.ok(!['/admin/api', '/admin/backup', '/admin/email', '/admin/displays', '/admin/integrations', '/personal/weather', '/modules/install'].some((suffix) => leaf.path.endsWith(suffix)), leaf.path);
+    assert.ok(!['/admin/api', '/admin/backup', '/admin/email', '/admin/displays', '/admin/integrations', '/personal/weather', '/personal/appearance', '/modules/install'].some((suffix) => leaf.path.endsWith(suffix)), leaf.path);
   }
 });
 

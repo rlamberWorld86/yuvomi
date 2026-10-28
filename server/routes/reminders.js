@@ -16,14 +16,14 @@ import { ORIGIN_MODULE, withoutSwitchedOffModules } from '../services/reminder-o
 import { reminderTargetVisible, reminderTargetVisibleSql } from '../services/reminder-targets.js';
 import { remindAtCompareKey, remindAtUtcSql } from '../utils/reminder-schedule.js';
 import { asksHouseholdAudience } from '../services/visibility.js';
-import { moveNoticeFields } from '../services/shopping-move-notices.js';
+
 
 const log    = createLogger('Reminders');
 const router = express.Router();
 
 // Exportiert fuer den Guard in test/test-disabled-module-reminders.js: jeder
 // Wert muss in ORIGIN_MODULE stehen, sonst faellt er still aus `/pending`.
-export const VALID_ENTITY_TYPES = ['task', 'event', 'subscription', 'inventory_item', 'inventory_tracked_date', 'pantry_item', 'cycle_period', 'cycle_log_nudge', 'schedule_entry', 'schedule_extra_entry', 'waste_pickup', 'document_expiry', 'health_prevention_due', 'fasting_goal', 'fasting_next_start', 'shopping_move_returned'];
+export const VALID_ENTITY_TYPES = ['task', 'event', 'subscription', 'inventory_item', 'inventory_tracked_date', 'cycle_period', 'cycle_log_nudge', 'schedule_entry', 'schedule_extra_entry', 'waste_pickup', 'document_expiry', 'health_prevention_due', 'fasting_goal', 'fasting_next_start'];
 
 /**
  * Nach jedem Schreibvorgang an den Erinnerungen eines Termins: die Zugewiesenen
@@ -51,87 +51,8 @@ function syncEventFanout(entityType, entityId, userId) {
   }
 }
 
-/**
- * HERKÜNFTE, DIE EIN LAUF LAUFEND HERSTELLT und die deshalb keine Handeingabe
- * annehmen: `pantry_item` stellt server/services/pantry-reminders.js in JEDEM
- * Benachrichtigungsdurchgang wieder her. Ein von Hand gesetzter Termin ist dort
- * binnen einer Minute weg, und zwar spurlos - ihn anzunehmen wäre eine Zusage,
- * die niemand hält. Ein ehrliches 400 sagt es sofort.
- *
- * `schedule_entry` gehört aus demselben Grund dazu:
- * server/services/schedule-reminders.js stellt seine Zeile bei jedem Lauf neu
- * her, und `entity_id` zeigt zudem auf einen Anker
- * (`schedule_reminder_entries`), den ein Aufrufer von aussen gar nicht bilden
- * könnte.
- *
- * `schedule_extra_entry` ebenso: derselbe periodische Sync stellt sie her,
- * auch wenn `entity_id` hier direkt auf eine echte `schedule_extra_shifts`-
- * Zeile zeigt statt auf einen Anker - der Vorlauf selbst
- * (`reminder_offset_minutes`) ist nur ueber die Extra-Routen aenderbar, nicht
- * ueber diesen generischen Router.
- *
- * WARUM NICHT AUCH `subscription`, `inventory_item`, `inventory_tracked_date`.
- * Auch sie werden abgeleitet, aber nur beim SCHREIBEN ihres Objekts: dort hält
- * ein handgesetzter Termin bis zur nächsten Änderung des Abos oder Geräts, und
- * das ist eine Halbwertszeit, mit der man arbeiten kann. Sie mitzusperren wäre
- * die geradere Regel und ein rückwirkender Bruch an einer zugesagten
- * `/api/v1`-Oberfläche, für den es keinen Anlass gibt. Die Unterscheidung ist
- * nicht Bequemlichkeit, sondern der Unterschied zwischen "hält bis du es
- * änderst" und "ist in sechzig Sekunden weg" (Entscheidung 2026-08-26).
- *
- * `cycle_period` und `cycle_log_nudge` gehören aus einem verwandten, aber
- * eigenen Grund dazu: server/services/cycle-reminders.js stellt ihre Zeile bei
- * jedem Lauf neu her, und `entity_id` zeigt auf einen Anker
- * (`cycle_reminder_anchors`), den ein Aufrufer von außen gar nicht bilden
- * könnte - ein vorhergesagter Periodenbeginn und "heute noch nicht geloggt"
- * sind beide keine gespeicherte Zeile, an die man von Hand eine Erinnerung
- * hängen könnte.
- *
- * `document_expiry` gehört dazu, obwohl `subscription`/`inventory_item`/
- * `inventory_tracked_date` es nicht tun: dort haelt ein handgesetzter Termin
- * bis zur naechsten Aenderung des Objekts, hier nicht.
- * documents.js#syncDocumentExpiryReminder loescht bei JEDEM Speichern ALLE
- * Zeilen der Entitaet, nicht nur die eigenen - ein Schreibweg, der das
- * respektiert, haette also nie eine Halbwertszeit, mit der man arbeiten kann.
- * Zusaetzlich haette ein settable `document_expiry` keine Sichtbarkeitspruefung
- * auf das einzelne Dokument (nur `mayTouchOrigin()` auf das Modul): ein
- * Mitglied koennte `entity_id`s fremder, privater Dokumente erraten und ihre
- * Namen ueber `GET /reminders/pending` zurücklesen.
- *
- * `health_prevention_due` gehört ebenfalls dazu: server/services/prevention-reminders.js
- * stellt sie bei jedem periodischen Lauf, nach jedem Schreiben eines Eintrags
- * und nach jeder Betreuungs-Änderung neu her - ein von Hand gesetzter Termin
- * wäre binnen einer Minute weg, wie bei `pantry_item`.
- *
- * Die LESEWEGE (GET) kennen alle Typen weiter: der Erinnerungs-Toast muss eine
- * abgeleitete Meldung anzeigen und wegwischen können.
- */
-const DERIVED_ENTITY_TYPES = ['pantry_item', 'cycle_period', 'cycle_log_nudge', 'schedule_entry', 'schedule_extra_entry', 'waste_pickup', 'document_expiry', 'health_prevention_due', 'fasting_goal', 'fasting_next_start', 'shopping_move_returned'];
 
-/* DIESER ROUTER IST EINE MISCHSTELLE, UND SEIN PFAD SAGT DAS NICHT.
- *
- * `/api/v1/reminders` löst über `moduleForPath()` auf `calendar` auf - der
- * Router teilt sich das Scope-Modul mit Kalender und Geburtstagen (scopes.js).
- * Die Zeilen, die er ausliefert, stammen aber aus SECHS Modulen: er nennt
- * Aufgabentitel, Abo-Namen, Inventar-Gegenstände und seit #811 auch
- * Vorratsartikel.
- *
- * Damit reichte ein Token mit `calendar:read`, um über `/reminders/pending` den
- * Namen eines Vorratsartikels zu lesen, und `calendar:write`, um die Meldung zu
- * verwerfen - ohne je einen `pantry`- oder `budget`-Scope zu besitzen. Dasselbe
- * gilt für ein Mitglied, dem ein Modul per `access_permissions` entzogen ist:
- * der Pfad-Guard in server/index.js fragt nach `calendar` und lässt es durch.
- *
- * Genau die Lage, für die es `deniedModules()` gibt (siehe dessen Kommentarkopf
- * zu /dashboard): wo ein Endpunkt Inhalte aus mehreren Modulen trägt, muss das
- * Aussortieren in der Route passieren. Eine Rechteregel darf nicht in einer
- * Middleware wohnen.
- *
- * Der Befund kam aus der PR-Review zu #811 und ist älter als dieses Feature -
- * er betraf fünf Herkünfte, bevor die sechste dazukam. Deshalb gibt es eine
- * Karte über alle und keine Ausnahme für die neue. Sie steht seit #1279 in
- * server/services/reminder-origins.js, weil auch die Zustellung sie braucht.
- */
+const DERIVED_ENTITY_TYPES = ['cycle_period', 'cycle_log_nudge', 'schedule_entry', 'schedule_extra_entry', 'waste_pickup', 'document_expiry', 'health_prevention_due', 'fasting_goal', 'fasting_next_start'];
 
 /**
  * Darf dieser Aufrufer eine Erinnerung dieser Herkunft sehen bzw. anfassen?
@@ -231,7 +152,6 @@ router.get('/pending', (req, res) => {
             FROM inventory_item_dates d JOIN inventory_items ii ON ii.id = d.item_id
             WHERE d.id = r.entity_id
           )
-          WHEN 'pantry_item' THEN (SELECT name FROM pantry_items WHERE id = r.entity_id)
           WHEN 'cycle_period' THEN (SELECT anchor_date FROM cycle_reminder_anchors WHERE id = r.entity_id)
           WHEN 'cycle_log_nudge' THEN (SELECT anchor_date FROM cycle_reminder_anchors WHERE id = r.entity_id)
           WHEN 'schedule_entry' THEN (
@@ -326,14 +246,7 @@ router.get('/pending', (req, res) => {
       // anderen nicht).
       // Die Meldung "Umzug zurueckgenommen" (#1912) traegt ihre Namen selbst:
       // verzoegert geholt wie oben, nur fuer ihre Zeilen.
-      if (row.entity_type === 'shopping_move_returned') {
-        const notice = moveNoticeFields(db.get(), row.entity_id);
-        if (notice) {
-          row.entity_title = notice.item_name;
-          row.move_notice = notice;
-          if (notice.back_list_id) row.target_url = `/shopping?list=${notice.back_list_id}`;
-        }
-      }
+
       if (row.entity_type === 'health_prevention_due' && row.assigned_from != null) {
         row.prevention_subject_name = db.get().prepare(`
           SELECT u.display_name FROM health_prevention_records pr

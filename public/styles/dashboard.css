@@ -315,8 +315,6 @@
  * -------------------------------------------------------- */
 .widget--tasks    { --widget-accent: var(--module-tasks); }
 .widget--calendar { --widget-accent: var(--module-calendar); }
-.widget--shopping { --widget-accent: var(--module-shopping); }
-.widget--meals    { --widget-accent: var(--module-meals); }
 .widget--notes    { --widget-accent: var(--module-notes); }
 .widget--budget   { --widget-accent: var(--module-budget); }
 .widget--contacts { --widget-accent: var(--module-contacts); }
@@ -330,7 +328,6 @@
 .widget--housekeeping { --widget-accent: var(--module-housekeeping); }
 .widget--schedule { --widget-accent: var(--module-schedule); }
 .widget--waste    { --widget-accent: var(--module-waste); }
-.widget--pantry   { --widget-accent: var(--module-pantry); }
 /* Wie das Wetter: eine Kachel, die keinem Modul gehoert, traegt den Ton der
  * Seite. Der Countdown (#647) sammelt aus Kalender UND Aufgaben ein - jeder
  * der beiden Toene waere fuer die andere Haelfte der Liste falsch. Ohne diese
@@ -923,227 +920,6 @@
   font-size: var(--type-caption);
   color: var(--color-text-tertiary);
   text-align: center;
-}
-
-/* --------------------------------------------------------
- * Essen-Widget (Slot-Grid)
- * -------------------------------------------------------- */
-.meals-widget {
-  padding: var(--space-3) var(--space-4) var(--space-4);
-}
-
-.meal-slots {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
-}
-
-.meal-slot {
-  min-width: 0;
-  padding: var(--space-3);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-2);
-  cursor: pointer;
-  touch-action: pan-y pinch-zoom;
-  transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
-  text-align: left;
-}
-
-.meal-slot:hover {
-  border-color: color-mix(in srgb, var(--slot-color, var(--color-accent)) var(--tint-hint), var(--color-border-strong));
-  background-color: color-mix(in srgb, var(--slot-color, var(--color-accent)) var(--tint-state), var(--color-surface-3));
-  box-shadow: var(--shadow-xs);
-}
-
-/* AUSNAHME vom Fokusring-Token: der Slot trägt die Farbe seines Mahlzeit-Typs,
- * die ihn auf der Übersicht überhaupt erst unterscheidbar macht. */
-.meal-slot:focus-visible {
-  --focus-ring-color: var(--slot-color, var(--color-accent));
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
-}
-
-/* Meal-Typ-Farben aus tokens.css */
-.meal-slot[data-type="breakfast"] { --slot-color: var(--meal-breakfast); }
-.meal-slot[data-type="lunch"]     { --slot-color: var(--meal-lunch); }
-.meal-slot[data-type="dinner"]    { --slot-color: var(--meal-dinner); }
-.meal-slot[data-type="snack"]     { --slot-color: var(--meal-snack); }
-
-.meal-slot__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  gap: var(--space-2);
-}
-
-.meal-slot__icon {
-  width: 16px;
-  height: 16px;
-  /* NICHT --color-text-disabled: der ganze Slot ist role=button (dashboard.js),
-   * auch der leere. Der Kuechen-Zwilling .meal-slot__add-btn traegt dieselbe
-   * Regel in meals.css. */
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-}
-
-.meal-slot--filled .meal-slot__icon {
-  color: var(--slot-color, var(--color-accent));
-}
-
-/* Wer kocht (#1679). Der Kopf verteilt Label und Symbol mit space-between;
- * der Avatar gehoert ans Ende neben das Symbol, nicht in die Mitte - die
- * automatische Marge nimmt den freien Platz vor ihm. Schrumpfen darf nur das
- * Label (es ellipsiert), nie die Scheibe. */
-.meal-slot__cook {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-  margin-inline-start: auto;
-  /* Die Scheibe traegt schon einen Rand in der Flaechenfarbe: mit dem vollen
-   * Kopf-Abstand stuende sie sichtbar weiter vom Symbol weg als das Label von
-   * ihr, und das Label verloere im schmalen Slot (155px am Telefon) die
-   * Breite, die "Abendessen" braucht. Die halbe Luecke geht an das Label. */
-  margin-inline-end: calc(-1 * var(--space-1));
-  /* Die Scheibe ist einen Pixel hoeher als die Label-Zeile; ohne den Ausgleich
-   * stuende der Titel eines Slots mit Koch tiefer als der seines Nachbarn. */
-  margin-block: calc(-1 * var(--space-px));
-}
-
-.meal-slot__type {
-  /* Kategorielabel eine Stufe kleiner als das Gericht (12px), damit „Frühstück"
-   * und der Gerichtname sich in der Hierarchie trennen (Critique Minor). */
-  font-size: var(--type-caption);
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Label bleibt neutral: die Slot-Farbe trägt allein das Icon — ein Akzent pro
- * Slot statt Label + Icon doppelt gefärbt (Critique R3 P2). */
-
-.meal-slot__title {
-  /* Gericht darf auf zwei Zeilen umbrechen statt auf ~1 Wort zu clippen. */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  margin-top: var(--space-1);
-  font-size: var(--type-secondary);
-  color: var(--color-text-secondary);
-  overflow: hidden;
-  max-width: 100%;
-}
-
-.meal-slot--filled .meal-slot__title {
-  color: var(--color-text-primary);
-  font-weight: var(--font-weight-semibold);
-}
-
-/* Leerer Slot: gedämpfter Em-Dash liest als bewusst leer (kein verirrter
- * Bindestrich). Der ganze Slot ist klickbar (role=button → /meals). */
-.meal-slot__title--empty {
-  color: var(--color-text-tertiary);
-}
-
-/* --------------------------------------------------------
- * Shopping-Widget
- * -------------------------------------------------------- */
-/* Zeile im Widget-Träger (Zeilenlisten-Regel, tokens.css): kein eigener Radius,
- * und ENTWEDER Haarlinie ODER Abstand - beides zugleich zeichnet die Trennung
- * doppelt. Der Hover läuft dafür über die volle Zeilenbreite. */
-.shopping-widget-list {
-  cursor: pointer;
-  touch-action: pan-y pinch-zoom;
-  transition: background-color var(--transition-fast);
-  padding: var(--space-2) var(--space-4);
-  margin-inline: calc(var(--space-4) * -1);
-}
-
-.shopping-widget-list:hover {
-  background-color: var(--color-surface-hover);
-}
-
-.shopping-widget-list + .shopping-widget-list {
-  border-top: 1px solid var(--color-border-subtle);
-}
-
-.shopping-widget-list__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-1);
-}
-
-.shopping-widget-list__name {
-  color: var(--color-text-primary);
-}
-
-.shopping-widget-list__count {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  font-weight: var(--font-weight-medium);
-}
-
-.shopping-widget-list__progress {
-  height: 6px;
-  background-color: var(--color-surface-3);
-  border-radius: var(--radius-full);
-  overflow: hidden;
-  margin-bottom: var(--space-2);
-}
-
-.shopping-widget-list__bar {
-  height: 100%;
-  background-color: var(--color-success);
-  border-radius: var(--radius-full);
-  transform-origin: left;
-  transform: scaleX(var(--progress-scale, 0));
-  transition: transform var(--transition-base);
-}
-
-.shopping-widget-list__items {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.shopping-widget-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--type-secondary);
-  color: var(--color-text-secondary);
-  line-height: 1.4;
-}
-
-.shopping-widget-item__dot {
-  width: 5px;
-  height: 5px;
-  border-radius: var(--radius-full);
-  background-color: var(--color-text-disabled);
-  flex-shrink: 0;
-}
-
-.shopping-widget-item__name {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.shopping-widget-item__qty {
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-}
-
-.shopping-widget-item--more {
-  color: var(--color-text-tertiary);
-  font-style: italic;
 }
 
 /* --------------------------------------------------------
@@ -2383,197 +2159,6 @@ svg.weather-forecast__icon {
   }
 }
 
-/* ── Onboarding Overlay ── */
-.onboarding-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
-  background: color-mix(in srgb, var(--color-bg) 70%, transparent);
-  backdrop-filter: var(--blur-lg);
-  -webkit-backdrop-filter: var(--blur-lg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-6);
-  animation: onboarding-in var(--duration-xl) var(--ease-out);
-  transition: background-color var(--duration-lg) var(--ease-out),
-    backdrop-filter var(--duration-lg) var(--ease-out),
-    -webkit-backdrop-filter var(--duration-lg) var(--ease-out);
-}
-
-/* Ein Schritt zeigt auf ein echtes Bedienelement (dashboard.js,
- * placeSpotlight): das Overlay wird klar, den Abdunkler traegt der Ring als
- * Schatten nach aussen - der Ausschnitt um das Element bleibt scharf. */
-.onboarding-overlay--spot {
-  background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.onboarding-spotlight {
-  position: fixed;
-  left: var(--spot-x, 50%);
-  top: var(--spot-y, 50%);
-  inline-size: var(--spot-w, 0);
-  block-size: var(--spot-h, 0);
-  border-radius: var(--spot-r, var(--radius-lg));
-  box-shadow: 0 0 0 2px var(--color-accent),
-    0 0 0 100vmax color-mix(in srgb, var(--color-bg) 78%, transparent);
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity var(--duration-lg) var(--ease-out),
-    left var(--duration-lg) var(--ease-glass),
-    top var(--duration-lg) var(--ease-glass),
-    inline-size var(--duration-lg) var(--ease-glass),
-    block-size var(--duration-lg) var(--ease-glass),
-    border-radius var(--duration-lg) var(--ease-glass);
-}
-
-.onboarding-overlay--spot .onboarding-spotlight {
-  opacity: 1;
-}
-
-/* Die Bildmarke statt eines Lucide-Zeichens im ersten Schritt - dieselbe
- * Kachel wie auf der Anmeldeseite (.auth-hero__mark). */
-.onboarding-mark {
-  display: inline-block;
-  inline-size: var(--space-16);
-  block-size: var(--space-16);
-  border-radius: 22.5%;
-  box-shadow: var(--shadow-md);
-}
-
-.onboarding-mark > .brand-mark {
-  display: block;
-  inline-size: 100%;
-  block-size: 100%;
-}
-
-.onboarding-overlay--out {
-  animation: onboarding-out var(--duration-lg) var(--ease-out) forwards;
-}
-
-@keyframes onboarding-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes onboarding-out {
-  from { opacity: 1; }
-  to   { opacity: 0; }
-}
-
-/* DIE SCHWEBENDE TAFEL, NICHT KARTE MIT RAND (Critique 2026-10-16; Detektor
- * `gpt-thin-border-wide-shadow`). Die Karte trug eine 1px-Haarlinie UND den
- * 28px-Schatten `--shadow-lg` - zwei Kanten fuer eine Flaeche. Sie schwebt
- * ueber dem verschwommenen Grund wie Dialog und Mehr-Blatt und nimmt deren
- * Material: `--glass-shadow-lg` bringt Tiefe und den feinen Lichtring in
- * einem, `--glass-inset-elevated` die Lichtkante oben (glass.css, R18). Keine
- * eigene Linie mehr. */
-.onboarding-card {
-  /* positioniert, damit die Tafel ueber dem Abdunkler des Lichtrings liegt
-   * (.onboarding-spotlight ist fixed und malte sonst darueber). */
-  position: relative;
-  background: var(--color-surface);
-  border: none;
-  border-radius: var(--radius-xl);
-  padding: var(--space-8);
-  max-width: 360px;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-4);
-  text-align: center;
-  box-shadow: var(--glass-shadow-lg), var(--glass-inset-elevated);
-}
-
-/* Der Schritt in der stehenden Karte (dashboard.js, showOnboarding): er traegt
- * die Spalte, die frueher die Karte selbst trug, und wechselt ueber
- * swapContent(). Seine Mindesthoehe ist die des hoechsten Schritts (gemessen);
- * der Text nimmt den Rest, damit Punkte und Knoepfe ueber alle Schritte an
- * derselben Stelle stehen. */
-.onboarding-step {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-4);
-  inline-size: 100%;
-}
-
-.onboarding-step > .onboarding-body {
-  flex: 1 0 auto;
-}
-
-.onboarding-icon {
-  width: 48px;
-  height: 48px;
-  color: var(--color-accent);
-}
-
-.onboarding-title {
-  font-size: var(--text-xl);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.onboarding-body {
-  font-size: var(--text-base);
-  color: var(--color-text-secondary);
-  line-height: var(--line-height-relaxed);
-  margin: 0;
-}
-
-.onboarding-dots {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.onboarding-dot {
-  width: var(--space-2);
-  height: var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--color-border);
-  transition: background var(--transition-fast);
-}
-
-.onboarding-dot--active {
-  background: var(--color-accent);
-}
-
-.onboarding-actions {
-  display: flex;
-  gap: var(--space-3);
-  width: 100%;
-  justify-content: flex-end;
-  /* Umbruch statt Quetschen - Begruendung an `.modal-panel__footer`
-   * (layout.css, #872). */
-  flex-wrap: wrap;
-  margin-top: var(--space-2);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .onboarding-overlay,
-  .onboarding-overlay--out { animation: none; }
-  .onboarding-overlay,
-  .onboarding-spotlight,
-  .onboarding-dot { transition: none; }
-}
-
-@media (max-width: 639px) {
-  .onboarding-overlay {
-    align-items: flex-start;
-    padding: var(--space-4);
-    padding-top: var(--space-16);
-  }
-
-  .onboarding-card {
-    max-width: calc(var(--space-16) * 5);
-    padding: var(--space-6);
-  }
-}
-
 /* --------------------------------------------------------
  * Dashboard-Shell + Today-Cockpit + Overview
  * Layout-Wurzel: vertikaler Stack aus Overview, Cockpit und Widget-Grid.
@@ -2999,14 +2584,6 @@ button.today-cockpit__more--link {
   --today-card-accent: var(--module-calendar);
 }
 
-.today-cockpit-card--shopping {
-  --today-card-accent: var(--module-shopping);
-}
-
-.today-cockpit-card--dinner {
-  --today-card-accent: var(--module-meals);
-}
-
 /* Die Quellen des Beitrags-Vertrags (public/utils/today-sheet.js): jede Zeile
  * spricht im Ton ihres Raums, wie die vier oben. Erinnerungen tragen den Ton
  * ihrer Herkunft (Abo = Budget, Frist = Dokumente), nicht einen eigenen. */
@@ -3019,7 +2596,6 @@ button.today-cockpit__more--link {
 .today-cockpit-card--budget       { --today-card-accent: var(--module-budget); }
 .today-cockpit-card--inventory    { --today-card-accent: var(--module-inventory); }
 .today-cockpit-card--documents    { --today-card-accent: var(--module-documents); }
-.today-cockpit-card--pantry       { --today-card-accent: var(--module-pantry); }
 
 /* Die Zeilen des Programms als eigene Liste im Traeger: Mehr-Zeile, Einkauf und
  * Coda stehen darunter ueber die volle Breite, auch wenn die Zeilen sich auf
@@ -4079,8 +3655,6 @@ button.today-cockpit__more--link {
 
 .dashboard .task-item,
 .dashboard .event-item,
-.dashboard .meal-slot,
-.dashboard .shopping-widget-list,
 .dashboard .note-item {
   border-radius: var(--radius-sm);
 }
@@ -4091,18 +3665,14 @@ button.today-cockpit__more--link {
   .dashboard .task-item,
   .dashboard .event-item,
   .dashboard .birthday-widget-item,
-  .dashboard .countdown-item,
-  .dashboard .shopping-widget-list,
-  .dashboard .meal-slot {
+  .dashboard .countdown-item {
     min-height: var(--target-base);
     box-sizing: border-box;
   }
 }
 
 .dashboard .task-item:hover,
-.dashboard .event-item:hover,
-.dashboard .meal-slot:hover,
-.dashboard .shopping-widget-list:hover {
+.dashboard .event-item:hover {
   /* Konsistent mit task/event: Hover gibt Feedback OHNE Lesbarkeit zu senken.
    * Farbige Zettel vertragen keinen Flächen-Tint → sanfter Schatten-Lift statt
    * des früheren opacity:0.8-Dimmens. */
@@ -5408,113 +4978,6 @@ button.today-cockpit__more--link {
 }
 
 /* --------------------------------------------------------
- * Vorrat-Widget „Laeuft bald ab" (Critique 2026-09-23)
- * Dieselbe Zeilenform wie Geburtstage und Countdown - Marke, Name mit
- * Metazeile, rechts die Resttage, Haarlinie per +-Kombinator: alle drei
- * beantworten „was, und wie lange noch", und zwei Formen dafuer waeren zwei
- * Sorten Eintrag. Die Marke ist der LAGERORT (Kuehlschrank, Gefrierschrank),
- * neutral auf der Mulde: die Farbe der Zeile gehoert der Dringlichkeit, der
- * Modulton steht einmal im Siegel des Kopfes.
- * -------------------------------------------------------- */
-.pantry-widget-row {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2);
-  /* Kein Radius: eine Zeile in EINEM Traeger ist keine Karte (Zeilenlisten-
-   * Regel, test:frontend-audit „row lists sit in exactly one carrier"). */
-  cursor: pointer;
-  touch-action: pan-y pinch-zoom;
-  transition: background-color var(--transition-fast);
-}
-
-.pantry-widget-row + .pantry-widget-row {
-  border-top: 1px solid var(--color-border-subtle);
-}
-
-/* Das benannte Token, kein Schatten - dieselbe Antwort wie .countdown-item. */
-.dashboard .pantry-widget-row:hover {
-  background-color: var(--color-surface-hover);
-}
-
-@media (pointer: coarse) {
-  .dashboard .pantry-widget-row {
-    min-height: var(--target-base);
-    box-sizing: border-box;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pantry-widget-row { transition: none; }
-}
-
-.pantry-widget-row__icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-full);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-fill-well);
-  color: var(--color-text-secondary);
-}
-
-.pantry-widget-row__icon svg,
-.pantry-widget-row__icon i {
-  width: 16px;
-  height: 16px;
-}
-
-.pantry-widget-row__body {
-  min-width: 0;
-}
-
-.pantry-widget-row__name {
-  color: var(--color-text-primary);
-  font-weight: var(--font-weight-semibold);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pantry-widget-row__meta {
-  margin-top: var(--space-0h);
-  color: var(--color-text-secondary);
-  font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Die Resttage sind der Grund, warum die Zeile da steht: rechts, mit Gewicht,
- * ohne Badge-Flaeche - „Laeuft morgen ab" ist ein Satzteil, kein Etikett.
- * Drei Raenge aus pantryExpiryTone() (utils/pantry-status.js): */
-.pantry-widget-row__days {
-  color: var(--color-text-secondary);
-  font-weight: var(--font-weight-semibold);
-  white-space: nowrap;
-}
-
-/* Abgelaufen - das Einzige, das jetzt eine Entscheidung verlangt (essen,
- * pruefen, wegwerfen). Der Gefahrenton steht nur hier, in der Schrift. */
-.pantry-widget-row__days--expired {
-  color: var(--color-danger);
-  font-weight: var(--font-weight-bold);
-}
-/* Heute und morgen - der Tag, an dem man es noch verbrauchen kann. */
-.pantry-widget-row__days--now { color: var(--color-warning); }
-/* `soon` bleibt beim Sekundaerton der Basisregel: nah genug fuer die Liste,
- * nicht nah genug, um zu rufen. */
-
-/* Der Rest, der nicht in die Kachel passt - eine Fussnote, kein Eintrag. */
-.pantry-widget-more {
-  margin: var(--space-2) 0 0;
-  padding: 0 var(--space-2);
-  color: var(--color-text-tertiary);
-}
-
-/* --------------------------------------------------------
  * Gesundheit-Widget (heutige Dosen)
  * Fortschrittsbalken „genommen/geplant" + nächste offene Dosis;
  * Nachbestell-Hinweis als dezenter Fuß-Chip.
@@ -5681,7 +5144,6 @@ button.today-cockpit__more--link {
 @media (prefers-reduced-motion: reduce) {
   .cycle-widget__ring-arc,
   .health-widget__bar-fill,
-  .shopping-widget-list__bar { transition: none; }
 }
 
 .health-widget__none {
@@ -6235,8 +5697,6 @@ button.today-cockpit__more--link {
 
 .wall-row--task     { --wall-row-accent: var(--module-tasks); }
 .wall-row--event    { --wall-row-accent: var(--module-calendar); }
-.wall-row--shopping { --wall-row-accent: var(--module-shopping); }
-.wall-row--dinner   { --wall-row-accent: var(--module-meals); }
 /* Die Quellen des Beitrags-Vertrags (public/utils/today-sheet.js): derselbe
  * Satz Raeume wie im Cockpit, damit Wand und Blatt dieselbe Herkunft zeigen. */
 .wall-row--health       { --wall-row-accent: var(--module-health); }
@@ -6248,7 +5708,6 @@ button.today-cockpit__more--link {
 .wall-row--budget       { --wall-row-accent: var(--module-budget); }
 .wall-row--inventory    { --wall-row-accent: var(--module-inventory); }
 .wall-row--documents    { --wall-row-accent: var(--module-documents); }
-.wall-row--pantry       { --wall-row-accent: var(--module-pantry); }
 
 /* Überlauf („+N weitere") und Coda („danach nichts mehr") sprechen als eine
  * ruhige Fußzeile UNTER dem Träger - sie erzählen zu Ende, sie sind keine
@@ -7397,36 +6856,6 @@ button.today-cockpit__more--link {
 .quick-link-swatch--active {
   border-color: var(--color-text-primary);
   box-shadow: var(--shadow-sm);
-}
-
-/* Vorschaubild in der Mahlzeitenkachel (#1059) - nur wo es eins gibt, siehe
-   renderTodayMeals(). Es sitzt IN der Titelzeile und ist so hoch wie sie, damit
-   ein bebilderter Slot nicht hoeher wird als ein textiger daneben. */
-.meal-slot__title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1h);
-  min-width: 0;
-}
-
-.meal-slot__title-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.meal-slot__thumb {
-  width: var(--icon-lg);
-  height: var(--icon-lg);
-  flex-shrink: 0;
-  border-radius: var(--radius-xs);
-  overflow: hidden;
-}
-
-.meal-slot__thumb-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .widget--fasting { container-type: inline-size; }

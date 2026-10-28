@@ -25,9 +25,7 @@ import { parseLocalDateKey, addLocalDays, todayKey as householdToday } from '/ut
 import { nowFields, zonedUTCProxy, zonedDateKey, zonedTimeKey } from '/utils/timezone.js';
 import { localizeBirthdayEvent } from '/utils/birthday-event.js';
 import { countdownPhrase, countdownRank } from '/utils/countdown.js';
-import { EXPIRY_SOON_DAYS, pantryExpiryPhrase, pantryExpiryTone } from '/utils/pantry-status.js';
-import { locationLabel } from '/utils/pantry-locations.js';
-import { pantryQuantityLabel } from '/utils/pantry-units.js';
+
 import { findPageFab } from '/utils/fab.js';
 import { setLeaveGuard } from '/utils/leave-guard.js';
 import { openModal, closeModal, confirmModal, refocusAfterRender } from '/components/modal.js';
@@ -41,7 +39,7 @@ import {
   WIDGET_SIZE_PRESETS, WIDGET_SIZE_OPTIONS,
   COCKPIT_COVERED_WIDGETS,
   nearestPreset, sameWidgetConfig, suggestGridHoleFill, rowFillSpans, columnFillSpans,
-  dashboardQuery, dashboardQueryFiltersCounts, dashboardRequest, normalizeShoppingListSelection,
+  dashboardQuery, dashboardQueryFiltersCounts, dashboardRequest,
   normalizeCalendarSelection,
   fetchPendingReminders, childDefaultWidgetConfig,
 } from '/utils/dashboard-widgets.js';
@@ -52,7 +50,7 @@ const buildDefaultWidgetConfig = () => DEFAULT_WIDGET_CONFIG.map((w) => ({ ...w 
 import { whoMark } from '/utils/seal-pair.js';
 import { MODULE_ICON, moduleIconHTML } from '/nav-icons.js';
 import { mountZonePrompt } from '/utils/household-zone-hint.js';
-import { mountFirstSteps, startFirstSteps } from '/utils/first-steps.js';
+
 import { rememberLayoutHint, layoutHintTiles, layoutHintQuery } from '/utils/dashboard-layout-hint.js';
 import { emptyHintHTML } from '/utils/empty-state.js';
 import { quickLinkHost } from '/utils/quick-link-url.js';
@@ -60,8 +58,7 @@ import { hasIcon } from '/utils/lucide-icons.js';
 import { prefersInkText } from '/utils/contrast.js';
 import { attachOverlay, pushOverlay, dropOverlay, isOverlayOpen } from '/utils/overlay-history.js';
 import { inertOutside } from '/utils/background-inert.js';
-import { mealTypeList, primeMealTypeNames } from '/utils/meal-types.js';
-import { recipeThumbHtml, wireRecipeThumbs } from '/utils/recipe-thumb.js';
+
 import { wireNoteCategoryOverflow } from '/utils/note-category-overflow.js';
 import { installPopoverMenus, popoverMenuHtml } from '/utils/popover-menu.js';
 import { reloadAfterSave } from '/utils/reload-after-save.js';
@@ -99,20 +96,14 @@ let _wallLeave = null;
  * Einmal gelesen, dann vergessen. */
 let _wallFocusIntent = null;
 
-
-
 const noteCategoryName = (category) => String(category?.name || '');
 const noteCategoryScope = (category) => t(
   category?.scope === 'personal' ? 'noteCategories.personal' : 'noteCategories.household',
 );
 
-
-// ── Onboarding ──────────────────────────────────────────────────────────────
-
-const ONBOARDING_KEY = 'yuvomi-onboarded';
 // Der Dialog benennt sich ueber seinen Schritt-Titel; die id steht hier, weil
 // beide Seiten der Verknuepfung sie brauchen (Overlay und `fillStep()`).
-const ONBOARDING_TITLE_ID = 'onboarding-step-title';
+
 const APP_NAME_STORAGE_KEY = 'yuvomi-app-name';
 const CUSTOMIZE_HINT_KEY = 'yuvomi-dash-customize-hint';
 
@@ -371,276 +362,10 @@ function getAppName() {
   return localStorage.getItem(APP_NAME_STORAGE_KEY) || 'Lamber Cockpit';
 }
 
-function getOnboardingSteps() {
-  const appName = getAppName();
-  // Plattform-bewusste Copy (Critique P5/Paket 3): der allererste Eindruck darf
-  // keine UI beschreiben, die der Nutzer nicht sieht - Desktop mit Sidebar
-  // bekommt weder Bottom-Bar- noch Wischgesten-Text. Gleicher Breakpoint wie
-  // der Sidebar-Umbruch (layout.css, min-width: 1024px).
-  const desktop = window.matchMedia('(min-width: 1024px)').matches;
-  // DIE MARKE UND DIE ECHTEN KNOEPFE (Re-Critique 2026-10-17, A1): der
-  // Rundgang begann mit einem Lucide-Haus statt der Bildmarke und beschrieb
-  // Leiste und Plus-Knopf nur in Worten. Schritt 1 traegt jetzt das Zeichen
-  // (utils/brand-mark.js), Schritt 2 und 3 zeigen auf das Bedienelement, das
-  // der Text nennt (`target`, siehe placeSpotlight in showOnboarding).
-  // SCHRITT 2 ZEIGT MODULE, KEINEN KOMPASS (R22 S9, Critique a1): `navigation`
-  // ist in Lucide der Ortungspfeil - er las sich als „Standort", der Text
-  // spricht von Leiste und Modulen. Schritt 3 verspricht das Wischen nur dort,
-  // wo es Zeilen gibt, die es koennen (Aufgaben, Einkauf, Vorrat).
-  return [
-    { mark: true,           title: t('onboarding.step1Title', { name: appName }), body: t('onboarding.step1Body') },
-    { icon: 'layout-grid',  title: t('onboarding.step2Title'), body: t(desktop ? 'onboarding.step2BodyDesktop' : 'onboarding.step2Body'),
-      target: () => document.querySelector(desktop ? '.nav-sidebar' : '.nav-bottom__items') },
-    { icon: 'plus-circle',  title: t('onboarding.step3Title'), body: t(desktop ? 'onboarding.step3BodyDesktop' : 'onboarding.step3Body'),
-      target: () => [...document.querySelectorAll('.page-fab')].find(isShownOnScreen) ?? null },
-  ];
-}
-
 /** Steht das Element sichtbar im Fenster? (Ziel eines Rundgang-Schritts) */
-function isShownOnScreen(el) {
-  if (!el || !el.getClientRects().length) return false;
-  const r = el.getBoundingClientRect();
-  return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0
-    && r.top < window.innerHeight && r.left < window.innerWidth;
-}
+
 
 /** Abstand des Lichtrings um das gezeigte Bedienelement, in px. */
-const ONBOARDING_SPOT_PAD = 6;
-
-function showOnboarding(appContainer, onDone) {
-  const steps = getOnboardingSteps();
-  let current = 0;
-
-  // Fokus vor dem Dialog merken, um ihn beim Schließen zurückzugeben.
-  const previouslyFocused = document.activeElement;
-
-  const overlay = document.createElement('div');
-  overlay.className = 'onboarding-overlay';
-  overlay.setAttribute('role', 'dialog');
-  overlay.setAttribute('aria-modal', 'true');
-  // EIN DIALOG OHNE NAMEN ist fuer den Screenreader nur „Dialog". Der Name
-  // kommt aus dem Schritt-Titel, den `fillStep()` ohnehin baut; die id ist
-  // deshalb konstant und wandert mit dem Austausch des Karteninhalts mit
-  // (WCAG 4.1.2). `aria-modal` versteckt alles dahinter - was bleibt, muss
-  // sich also selbst benennen.
-  overlay.setAttribute('aria-labelledby', ONBOARDING_TITLE_ID);
-
-  const onKeydown = (event) => {
-    if (event.key === 'Escape') { finish(); return; }
-    if (event.key !== 'Tab') return;
-    // Fokus-Trap (WCAG 2.4.3/2.1.2): der Erststart-Dialog darf den Fokus nicht
-    // auf die verdeckte Seite dahinter entlassen. Fokussierbare Elemente je
-    // Tab-Druck neu ermitteln, da fillStep() den Karteninhalt austauscht.
-    const focusables = overlay.querySelectorAll(
-      'button, [href], input, [tabindex]:not([tabindex="-1"])',
-    );
-    if (!focusables.length) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-  document.addEventListener('keydown', onKeydown);
-
-  /* DIE KARTE STEHT, IHR INHALT WECHSELT (R17, Bewegung). Bisher baute jeder
-   * Schritt die Karte neu: sie sprang mit der Textlaenge (gemessen 327 ->
-   * 353px) und die Knoepfe wanderten unter dem Zeiger weg. Jetzt bleibt die
-   * Karte derselbe Knoten, `.onboarding-step` darin traegt den Schritt und
-   * tauscht ueber swapContent() in Leserichtung (utils/content-swap.js) - und
-   * er ist so hoch wie der hoechste der Schritte (`fitSteps()`, gemessen
-   * statt geraten: die Texte sind je Sprache verschieden lang). */
-  const card = document.createElement('div');
-  card.className = 'onboarding-card';
-  const stepEl = document.createElement('div');
-  stepEl.className = 'onboarding-step';
-  card.appendChild(stepEl);
-
-  /* DER LICHTRING (Re-Critique 2026-10-17, A1 "kein Bezug auf echte
-   * Bedienelemente"). Nennt ein Schritt die Leiste oder den Plus-Knopf, liegt
-   * ueber genau diesem Knopf ein Ausschnitt: der Ring traegt den Abdunkler als
-   * Schatten nach aussen (`box-shadow` mit 100vmax Spreizung), das Overlay
-   * selbst wird dafuer klar. So steht das echte Element scharf im Bild, der
-   * Rest gedimmt - ohne Maske, ohne Kopie des Elements. Klicks faengt weiter
-   * das Overlay; der Ring ist reine Anzeige (aria-hidden), der Text bleibt die
-   * Aussage. Findet sich das Ziel nicht (Modul ohne Plus, ausgeblendete
-   * Leiste), bleibt der Schritt so, wie er vorher war: Tafel auf Unschaerfe. */
-  const spot = document.createElement('div');
-  spot.className = 'onboarding-spotlight';
-  spot.setAttribute('aria-hidden', 'true');
-  overlay.appendChild(spot);
-  overlay.appendChild(card);
-
-  function placeSpotlight() {
-    const target = steps[current].target?.();
-    const shown = isShownOnScreen(target);
-    overlay.classList.toggle('onboarding-overlay--spot', shown);
-    if (!shown) return;
-    const r = target.getBoundingClientRect();
-    const radius = parseFloat(getComputedStyle(target).borderTopLeftRadius) || 0;
-    const pad = ONBOARDING_SPOT_PAD;
-    spot.style.setProperty('--spot-x', `${Math.round(r.left - pad)}px`);
-    spot.style.setProperty('--spot-y', `${Math.round(r.top - pad)}px`);
-    spot.style.setProperty('--spot-w', `${Math.round(r.width + pad * 2)}px`);
-    spot.style.setProperty('--spot-h', `${Math.round(r.height + pad * 2)}px`);
-    spot.style.setProperty('--spot-r', `${Math.round(Math.min(radius + pad, (r.height + pad * 2) / 2))}px`);
-  }
-  const onResize = () => placeSpotlight();
-  window.addEventListener('resize', onResize);
-
-  function fitSteps() {
-    stepEl.style.minBlockSize = '';
-    const shown = current;
-    let tallest = 0;
-    for (current = 0; current < steps.length; current += 1) {
-      fillStep();
-      tallest = Math.max(tallest, stepEl.offsetHeight);
-    }
-    current = shown;
-    fillStep();
-    if (tallest > 0) stepEl.style.minBlockSize = `${tallest}px`;
-  }
-
-  /** Baut den Schritt `current` in die stehende Karte; gibt seinen Hauptknopf zurueck. */
-  function fillStep() {
-    const step = steps[current];
-    const isLast = current === steps.length - 1;
-    stepEl.replaceChildren();
-
-    let icon;
-    if (step.mark) {
-      icon = document.createElement('span');
-      icon.className = 'onboarding-mark';
-      icon.setAttribute('aria-hidden', 'true');
-      icon.insertAdjacentHTML('beforeend', brandMarkSvg());
-    } else {
-      icon = document.createElement('i');
-      icon.dataset.lucide = step.icon;
-      icon.className = 'onboarding-icon';
-      icon.setAttribute('aria-hidden', 'true');
-    }
-
-    const title = document.createElement('h2');
-    title.className = 'onboarding-title';
-    title.id = ONBOARDING_TITLE_ID;
-    title.textContent = step.title;
-
-    const body = document.createElement('p');
-    body.className = 'onboarding-body';
-    body.textContent = step.body;
-
-    // Die Punkte sind reine Dekoration und fuer Screenreader unsichtbar; die
-    // Fortschrittsansage traegt ein sr-only-Text daneben - vorher hoerte ein
-    // Screenreader gar nicht, an welchem der drei Schritte er steht
-    // (Critique 2026-08-27, Persona Sam).
-    const dots = document.createElement('div');
-    dots.className = 'onboarding-dots';
-    dots.setAttribute('aria-hidden', 'true');
-    steps.forEach((_, i) => {
-      const dot = document.createElement('span');
-      dot.className = `onboarding-dot${i === current ? ' onboarding-dot--active' : ''}`;
-      dots.appendChild(dot);
-    });
-    const progress = document.createElement('p');
-    progress.className = 'sr-only';
-    progress.textContent = t('onboarding.stepProgress', { current: current + 1, total: steps.length });
-
-    const actions = document.createElement('div');
-    actions.className = 'onboarding-actions';
-    actions.dataset.dialogActions = '';
-
-    const skipBtn = document.createElement('button');
-    skipBtn.className = 'btn btn--ghost';
-    skipBtn.textContent = t('onboarding.skip');
-    skipBtn.addEventListener('click', finish);
-
-    const nextBtn = document.createElement('button');
-    nextBtn.className = 'btn btn--primary';
-    nextBtn.textContent = isLast ? t('onboarding.done') : t('onboarding.next');
-    nextBtn.addEventListener('click', () => {
-      if (isLast) { finish(); return; }
-      current++;
-      // Der Fokus geht an den NEUEN Hauptknopf (der alte ist mit dem Schritt
-      // gegangen) - synchron nach dem Tausch, die Blende sperrt nichts.
-      let next = null;
-      swapContent(stepEl, () => { next = fillStep(); }, { direction: 1 });
-      next?.focus();
-    });
-
-    // EIN SCHRITT ZURUECK (R23 S10, Critique G6 P3 "Tour ohne Zurueck"): wer
-    // den Text zur Leiste zu schnell weggetippt hat, kam nur durch einen
-    // Neustart des Rundgangs zurueck. Ab Schritt 2 steht "Zurueck" vorn, wo
-    // auf Schritt 1 "Ueberspringen" steht (Zurueck-Geste und Esc beenden ihn
-    // weiterhin, attachOverlay unten).
-    const backBtn = document.createElement('button');
-    backBtn.className = 'btn btn--ghost';
-    backBtn.textContent = t('common.back');
-    backBtn.addEventListener('click', () => {
-      current--;
-      let next = null;
-      swapContent(stepEl, () => { next = fillStep(); }, { direction: -1 });
-      next?.focus();
-    });
-
-    if (current > 0) actions.appendChild(backBtn);
-    else if (!isLast) actions.appendChild(skipBtn);
-    actions.appendChild(nextBtn);
-    stepEl.appendChild(icon);
-    stepEl.appendChild(title);
-    stepEl.appendChild(body);
-    stepEl.appendChild(dots);
-    stepEl.appendChild(progress);
-    stepEl.appendChild(actions);
-
-    if (window.lucide) window.lucide.createIcons({ el: stepEl });
-    placeSpotlight();
-    return nextBtn;
-  }
-
-  let finished = false;
-  function finish() {
-    if (finished) return;
-    finished = true;
-    document.removeEventListener('keydown', onKeydown);
-    window.removeEventListener('resize', onResize);
-    localStorage.setItem(ONBOARDING_KEY, '1');
-    // Am Konto vermerken, nicht nur am Geraet: sonst zeigt ein neues Geraet
-    // oder ein privates Fenster den Rundgang erneut, obwohl das Konto ihn
-    // schon gesehen hat. Bewusst fire-and-forget - ein Netzwerkfehler hier
-    // darf den Dialog nicht am Schliessen hindern; der lokale Merker faengt
-    // den aktuellen Browser ohnehin ab.
-    auth.markOnboardingSeen().catch(() => {});
-    // Fokus dorthin zurückgeben, wo er vor dem Dialog lag, sonst auf den
-    // Inhalt (`#main-content`, tabIndex -1 - wie nach einer Navigation).
-    // `document.body.focus()` tat nichts, und der Fokus blieb im entfernten
-    // Overlay haengen (Modern-Web-Guidance-Audit, Befund 10).
-    releaseBackground();
-    const restoreTarget = (previouslyFocused?.isConnected && previouslyFocused !== document.body)
-      ? previouslyFocused
-      : document.getElementById('main-content');
-    overlay.classList.add('onboarding-overlay--out');
-    overlay.addEventListener('animationend', () => overlay.remove(), { once: true });
-    // Fallback falls animationend nicht feuert (prefers-reduced-motion):
-    setTimeout(() => overlay.remove(), 300);
-    restoreTarget?.focus?.();
-    onDone?.();
-  }
-
-  appContainer.appendChild(overlay);
-  // Messen kann erst ein Knoten im Baum; danach steht Schritt 1.
-  fitSteps();
-  // Die Seite hinter dem Rundgang ist gesperrt, solange er laeuft
-  // (utils/background-inert.js); finish() gibt sie vor dem Fokus frei.
-  const releaseBackground = inertOutside(overlay);
-  setTimeout(() => stepEl.querySelector('.btn--primary')?.focus(), 50);
-  // Die Zurueck-Geste beendet die Einfuehrung, statt hinter ihr zu navigieren
-  // (#871). `finish()` ist der EINE Weg hinaus und merkt sich das auch.
-  attachOverlay(overlay, finish);
-}
 
 // Einmaliger, zurückhaltender Hinweis auf den „Anpassen"-Einstieg: Da vier Widgets
 // standardmäßig hinter dem Cockpit ausgeblendet sind, macht ein sanfter Puls beim
@@ -677,9 +402,9 @@ function maybeHintCustomize(container) {
 // `split-expenses` ist kein Widget, sondern eine Kachel der Kennzahlreihe -
 // steht aber hier, weil `isWidgetModuleEnabled()` auch die Kacheln filtert, und
 // die geteilten Ausgaben haengen am Budget-Modul (server/scopes.js).
-const MODULE_FOR_WIDGET = { tasks: 'tasks', calendar: 'calendar', shopping: 'shopping', meals: 'meals', notes: 'notes', birthdays: 'birthdays', budget: 'budget', 'split-expenses': 'budget', rewards: 'rewards', health: 'health', cycle: 'health', fasting: 'health', nutrition: 'health', housekeeping: 'housekeeping', schedule: 'schedule', waste: 'waste', pantry: 'pantry' };
+const MODULE_FOR_WIDGET = { tasks: 'tasks', calendar: 'calendar',   notes: 'notes', birthdays: 'birthdays', budget: 'budget', 'split-expenses': 'budget', rewards: 'rewards', health: 'health', cycle: 'health', fasting: 'health', nutrition: 'health', housekeeping: 'housekeeping', schedule: 'schedule', waste: 'waste' };
 
-const WIDGETS_WITH_OPTIONS = new Set(['calendar', 'tasks', 'notes', 'waste', 'shopping']);
+const WIDGETS_WITH_OPTIONS = new Set(['calendar', 'tasks', 'notes', 'waste']);
 
 
 function widgetHasOptions(id) {
@@ -734,8 +459,6 @@ function setCountdownAvailability(items) {
  * Anfrage selbst scheiterte und der Server gar nichts sagen konnte. */
 let weatherAvailable = false;
 
-
-
 // Aus welchem Modul ein Countdown stammt, entscheidet über ihn: wer den
 // Kalender abgeschaltet hat, soll dessen Einträge auch hier nicht sehen. Die
 // Kachel als Ganzes gehört keinem Modul (siehe PERMISSION_WIDGETS), ihre
@@ -784,11 +507,11 @@ function widgetLabel(id) {
   const map = {
     tasks:    () => t('nav.tasks'),
     calendar: () => t('nav.calendar'),
-    shopping: () => t('nav.shopping'),
-    meals:    () => t('nav.meals'),
+
+
     notes:    () => t('nav.notes'),
     birthdays: () => t('nav.birthdays'),
-    pantry:   () => t('dashboard.pantryExpiringTitle'),
+
     family:   () => t('dashboard.familyTitle'),
     clock:    () => t('dashboard.clock'),
     metrics:  () => t('dashboard.metrics'),
@@ -976,27 +699,7 @@ const PRIORITY_LABELS = () => ({
   low:    t('tasks.priorityLow'),
 });
 
-const MEAL_ORDER = Object.freeze(['breakfast', 'lunch', 'dinner', 'snack']);
-
-function normalizeVisibleMealTypes(visibleMealTypes) {
-  if (!Array.isArray(visibleMealTypes)) return MEAL_ORDER;
-  const filtered = MEAL_ORDER.filter((type) => visibleMealTypes.includes(type));
-  return filtered.length ? filtered : MEAL_ORDER;
-}
-
-// Aus utils/meal-types.js, nicht aus vier eigenen t()-Zeilen: der Haushalt darf
-// die Slots umbenennen (#1058), und die Kachel nennt dieselbe Mahlzeit wie der
 // Planer daneben.
-const MEAL_LABELS = () => Object.fromEntries(
-  mealTypeList().map(({ key, label }) => [key, label]),
-);
-
-const MEAL_ICONS = {
-  breakfast: 'sunrise',
-  lunch:     'sun',
-  dinner:    'moon',
-  snack:     'apple',
-};
 
 function budgetCategoryLabel(category) {
   const key = BUDGET_CATEGORY_LABEL_KEYS[category];
@@ -1141,9 +844,6 @@ function buildTodayHighlights(data) {
     : Array.isArray(data?.upcomingEvents)
       ? data.upcomingEvents
       : [];
-  const shoppingItems = Array.isArray(data?.shopping?.items) ? data.shopping.items : [];
-  const shoppingLists = Array.isArray(data?.shoppingLists) ? data.shoppingLists : [];
-  const meals = data?.meals ?? data?.todayMeals ?? null;
 
   const urgentTask = tasks.find((task) => task.priority === 'urgent') ?? tasks[0] ?? null;
 
@@ -1155,96 +855,33 @@ function buildTodayHighlights(data) {
   });
   const nextEvent = todayEvents[0] ?? null;
 
-  // DIE ZAHL DES SERVERS, wo es sie gibt (#1818): `shoppingLists` traegt
+
   // hoechstens drei Listen, die Summe ihrer `open_count` war bei vier Listen
-  // schon zu klein (gemessen 13 gegen 14). `shoppingOpenCount` zaehlt ueber
+
   // alle Listen; ohne ihn (aelterer Server, Abfrage gescheitert: `null`)
   // bleibt die Summe der geladenen Listen.
-  const serverOpenCount = data?.shoppingOpenCount;
-  const openShoppingCount = shoppingItems.length
-    ? shoppingItems.filter((item) => !item.is_checked).length
-    : typeof serverOpenCount === 'number' && Number.isFinite(serverOpenCount)
-    ? serverOpenCount
-    : shoppingLists.reduce((sum, list) => {
-        if (Number.isFinite(Number(list.open_count))) return sum + Number(list.open_count);
-        if (Number.isFinite(Number(list.openCount))) return sum + Number(list.openCount);
-        const items = Array.isArray(list.items) ? list.items : [];
-        return sum + items.filter((item) => !item.is_checked).length;
-      }, 0);
-  const { meal, mealType } = selectTodayMeal(meals);
 
   return {
     urgentTask,
     nextEvent,
-    openShoppingCount,
-    meal,
-    mealType,
+
     taskCount: tasks.length,
     eventCount: todayEvents.length,
   };
 }
 
-// Nominale Slot-Zeiten der Mahlzeiten: Mahlzeiten tragen keine Uhrzeit, brauchen
+
 // im chronologischen Tagesprogramm aber einen Platz. Die Werte ordnen nur ein,
 // sie behaupten keine Essenszeit - deshalb erscheinen sie nie als Label.
-const MEAL_SORT_TIME = { breakfast: '08:00', lunch: '12:30', snack: '15:30', dinner: '18:30' };
+
 
 // Die Slots im Tagesverlauf, aus denselben nominalen Zeiten: der Snack (15:30)
 // liegt zwischen Mittag und Abend.
-const MEAL_DAY_ORDER = Object.freeze(
-  Object.keys(MEAL_SORT_TIME).sort((a, b) => MEAL_SORT_TIME[a].localeCompare(MEAL_SORT_TIME[b])),
-);
+
 
 // Pick the meal relevant to the current time of day (matches greeting thresholds:
 // morning → breakfast, afternoon → lunch, evening → dinner). If the target meal
 // is not planned, fall back to the next planned meal later today - in day order,
-// snack included (#2206): seit 2.79.0 traegt `todayMeals` ihn mit an die Wand.
-function selectTodayMeal(meals) {
-  const order = MEAL_DAY_ORDER;
-  const list = Array.isArray(meals)
-    ? meals
-    : meals && typeof meals === 'object'
-      ? order.map((type) => (meals[type] ? { ...meals[type], meal_type: type } : null)).filter(Boolean)
-      : [];
-
-  const h = nowFields().hour;
-  const targetType = h < 12 ? 'breakfast' : h < 18 ? 'lunch' : 'dinner';
-
-  for (let i = order.indexOf(targetType); i < order.length; i++) {
-    const found = list.find((m) => m.meal_type === order[i]);
-    if (found) return { meal: found, mealType: order[i] };
-  }
-  return { meal: null, mealType: targetType };
-}
-
-/**
- * Tagesprogramm (Seele-Paket): heutige Termine, fällige Aufgaben und die nächste
- * Mahlzeit als EINE chronologische Erzählung statt drei Modul-Aggregaten.
- * Sortiert wird über einen HH:MM-Schlüssel; Zeitloses ordnet sich bewusst ein:
- * Überfälliges zuerst (00:00, es ist schon zu spät), dann Ganztägiges (00:01),
- * dann heute Fälliges ohne Uhrzeit (00:02). upcomingEvents liefert nur „ab
- * jetzt" - Vergangenes verschwindet also von selbst aus dem Programm.
- */
-/**
- * Der Koch einer Mahlzeit als Person (#1679) - oder null. `todayMeals` traegt
- * ihn flach neben der Mahlzeit (`cook_user_id`, `cook_name`, `cook_color`);
- * Avatar-Stapel und Ueberlappungszeichen lesen eine Person mit `display_name`,
- * `color` und `avatar_data`.
- *
- * DAS BILD KOMMT AUS `users` DER DASHBOARD-ANTWORT, nicht aus der Mahlzeit:
- * dieselbe Liste, aus der "Wer heute dran ist" seine Gesichter nimmt - sie
- * geht mit jeder Antwort von `/dashboard` mit, auch an ein Wandtablett. Ein
- * Koch, der kein Mitglied (mehr) ist, steht dort nicht und zeigt Initialen.
- */
-function mealCookPerson(meal, users) {
-  if (!meal?.cook_user_id) return null;
-  return {
-    id: meal.cook_user_id,
-    display_name: meal.cook_name ?? '',
-    color: meal.cook_color ?? null,
-    avatar_data: (Array.isArray(users) ? users : []).find((user) => user.id === meal.cook_user_id)?.avatar_data ?? null,
-  };
-}
 
 /* WER SCHAUT (R20, Kinder-Standards). Die Seite setzt das in `render()`; die
  * Programmzeilen fragen es, damit ein Kind seine Aufgaben zuerst sieht. */
@@ -1266,7 +903,7 @@ function taskForOthersOnly(task, viewer) {
   return people.length > 0 && !people.some((person) => person?.id === viewer.id);
 }
 
-function buildTodayProgram(data, { includeTasks = true, includeCalendar = true, includeMeals = true, now = new Date(), viewer = dashboardViewer } = {}) {
+function buildTodayProgram(data, { includeTasks = true, includeCalendar = true,  now = new Date(), viewer = dashboardViewer } = {}) {
   const highlights = buildTodayHighlights(data);
   const todayKey = zonedDateKey(now);
   const nowStamp = householdNowStamp(now);
@@ -1354,28 +991,6 @@ function buildTodayProgram(data, { includeTasks = true, includeCalendar = true, 
     }
   }
 
-  if (includeMeals && highlights.meal) {
-    rows.push({
-      kind: 'meal',
-      objectId: highlights.meal.id ?? null,
-      sortKey: MEAL_SORT_TIME[highlights.mealType] ?? MEAL_SORT_TIME.dinner,
-      timeLabel: '',
-      title: highlights.meal.title,
-      sub: MEAL_LABELS()[highlights.mealType] ?? t('dashboard.todayDinner'),
-      icon: MEAL_ICONS[highlights.mealType] ?? 'utensils',
-      tone: 'dinner',
-      // Die Mahlzeit selbst, nicht die Wurzel des Plans (R22, D3): der
-      // Essensplan holt ihre Karte ins Bild und oeffnet ihr Blatt.
-      route: highlights.meal.id != null ? `/meals?open=${encodeURIComponent(String(highlights.meal.id))}` : '/meals',
-      // Wer kocht (#1679): dasselbe Ueberlappungszeichen wie bei Termin und
-      // Aufgabe - "wen geht es an" ist bei einer Mahlzeit der Koch. Ohne Koch
-      // bleibt die Zeile, wie sie war.
-      who: mealCookPerson(highlights.meal, data?.users),
-      priority: 80,
-      open: false,
-    });
-  }
-
   rows.sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
 
   // Der nächste kommende Termin über heute hinaus - der beruhigende Ausblick
@@ -1396,7 +1011,7 @@ function buildTodayProgram(data, { includeTasks = true, includeCalendar = true, 
     rows,
     nextUpcoming,
     nextDueTask,
-    openShoppingCount: highlights.openShoppingCount,
+
     tasksDoneToday: Number(data?.tasksDoneToday) || 0,
   };
 }
@@ -1761,25 +1376,7 @@ function calendarListRows(w) {
   return listRowsAttr(calendarListRowsOf(w));
 }
 
-/*
- * DIE BADGE ZAEHLT DIE SACHE, NICHT DIE ZEILEN (Critique 2026-09-23).
- *
- * Bis hierher trugen Notizen, Geburtstage, Aufgaben und Einkauf die Laenge der
- * GEZEIGTEN Liste im Kopf: „Notizen 3" bei fuenf angehefteten, „Geburtstage 5"
- * bei acht, „Aufgaben 5" bei zwoelf offenen - eine Zahl, die genau bis zur
- * Obergrenze der Liste stimmt und darueber still luegt. Die Kennzahlkacheln
- * hatten dieselbe Lehre schon gezogen (`openTaskCount` statt `urgentTasks`);
- * die Kachelkoepfe daneben nicht.
- *
- * Die Gesamtzahl kommt vom Server, neben der Liste (`notesTotal`,
- * `birthdayTotal`, `openTaskCount`, `shoppingOpenCount`) - wie `countdownTotal`
- * beim Countdown. Fehlt sie (aelterer Server, Fehlerpfad), faellt die Badge auf
- * die geladene Laenge zurueck; nie unter die gezeigten Zeilen, denn eine Badge
- * kleiner als die Liste darunter waere derselbe Widerspruch andersherum.
- *
- * Was nicht in die Kachel passt, wird genannt: eine ruhige Fusszeile „+N
- * weitere", dieselbe Form wie beim Countdown und bei der Entsorgung.
- */
+
 function listTotal(total, loaded) {
   const n = total === null || total === undefined || total === '' ? NaN : Number(total);
   return Number.isFinite(n) ? Math.max(n, loaded) : loaded;
@@ -1949,52 +1546,6 @@ function renderCountdowns(allItems, size, total = null) {
   return `<div class="widget widget--countdown">
     ${widgetHeader('countdown', t('dashboard.countdownTitle'), gesamt, null, null, 'dashboard')}
     <div class="widget__body">${rows}${more}</div>
-  </div>`;
-}
-
-function renderTodayMeals(meals, visibleMealTypes = MEAL_ORDER, users = []) {
-  const mealLabels = MEAL_LABELS();
-  const safeMeals = Array.isArray(meals) ? meals : [];
-  const slots = normalizeVisibleMealTypes(visibleMealTypes).map((type) => {
-    const meal = safeMeals.find((m) => m.meal_type === type);
-    // WER KOCHT (#1679): der Avatar steht in der Kopfzeile des Slots, vor dem
-    // Symbol der Mahlzeitenart - dort ist neben dem kurzen Typ-Label Platz,
-    // waehrend der Titel darunter seine zwei Zeilen fuer das Gericht braucht.
-    // Der Name geht als sr-only-Satz mit: die Scheibe traegt ihn sonst nur als
-    // `title`. Ohne Koch steht nichts da, der Slot sieht aus wie bisher.
-    const cook = mealCookPerson(meal, users);
-    const cookMark = cook
-      ? `<span class="meal-slot__cook">${renderAvatarStack([cook], { size: 20, maxVisible: 1 })}<span class="sr-only">${esc(t('meals.cookNamed', { name: cook.display_name }))}</span></span>`
-      : '';
-    return `
-      <div class="meal-slot ${meal ? 'meal-slot--filled' : ''}" data-type="${type}" data-route="/meals" role="button" tabindex="0">
-        <div class="meal-slot__header">
-          <span class="meal-slot__type">${mealLabels[type]}</span>
-          ${cookMark}<i data-lucide="${MEAL_ICONS[type]}" class="meal-slot__icon" aria-hidden="true"></i>
-        </div>
-        <div class="meal-slot__title${meal ? '' : ' meal-slot__title--empty'}">${meal
-          // NUR MIT BILD, anders als im Planer (#1059). Der Slot traegt oben
-          // rechts schon ein Symbol fuer seine Mahlzeitenart; ein zweites,
-          // gleich aussehendes Platzhalter-Symbol daneben waere Unruhe ohne
-          // Aussage. Die Hoehe der Kachel haengt nicht daran - das Bild sitzt
-          // in der Titelzeile und ist so hoch wie sie.
-          ? `${(meal.recipe_has_own_image || meal.recipe_has_image) ? recipeThumbHtml({
-              recipeId: meal.recipe_id,
-              hasImage: meal.recipe_has_image,
-              hasOwnImage: meal.recipe_has_own_image,
-              imageVersion: meal.recipe_image_version,
-              className: 'meal-slot__thumb',
-            }) : ''}<span class="meal-slot__title-text">${esc(meal.title)}</span>`
-          : '-'}</div>
-      </div>
-    `;
-  }).join('');
-
-  return `<div class="widget widget--meals">
-    ${widgetHeader('meals', t('dashboard.todayMeals'), null, '/meals', t('dashboard.weekLink'))}
-    <div class="meals-widget">
-      <div class="meal-slots">${slots}</div>
-    </div>
   </div>`;
 }
 
@@ -2405,7 +1956,7 @@ function renderFamilyWidget(users, data, { manageHref = null } = {}) {
       <div class="family-widget__list">
         ${sharedRow}
         ${rows}
-        ${moreCount > 0 ? `<div class="family-member family-member--more">${esc(t('dashboard.shoppingMore', { count: moreCount }))}</div>` : ''}
+        ${moreCount > 0 ? `<div class="family-member family-member--more">${esc(t('dashboard.familyMore', { count: moreCount }))}</div>` : ''}
       </div>
       <p class="family-widget__footer">${footer}</p>
     </div>
@@ -2491,27 +2042,11 @@ const BUDGET_MONTH_ROUTE = '/budget?tab=budget';
  * Morgen, sondern eine Auskunft, die man sich holt: er steht im Budget-Widget,
  * wer es einblendet. Die offene Forderung der geteilten Ausgaben bleibt - sie
  * verlangt eine Handlung, wie eine ueberfaellige Aufgabe. */
-const METRIC_TILE_ORDER = ['tasks', 'shopping', 'birthdays', 'meals', 'notes'];
+const METRIC_TILE_ORDER = ['tasks',  'birthdays',  'notes'];
 const METRIC_TILE_COUNT = 4;
 
-/**
- * Wohin eine Zeile fuehrt, die ueber ALLE Einkaufslisten zaehlt (#1821).
- *
- * Die Zahl meint mehrere Listen, also ist die Modulseite das ehrliche Ziel -
- * bis nur noch EINE Liste etwas Offenes hat: dann meint "5 offen" genau diese
- * Liste, und `/shopping` oeffnete stattdessen die aelteste (shopping.js liest
- * `?list=`, sonst die erste geladene). `shoppingOpenLists` zaehlt der Server
- * ueber alle Listen; `shoppingLists` traegt hoechstens drei, bei einer einzigen
- * also genau sie.
- */
-function shoppingSoleListRoute(data) {
-  const lists = Array.isArray(data?.shoppingLists) ? data.shoppingLists : [];
-  if (Number(data?.shoppingOpenLists) !== 1 || lists.length !== 1 || lists[0]?.id == null) return '/shopping';
-  return `/shopping?list=${encodeURIComponent(String(lists[0].id))}`;
-}
-
 function metricTileFor(id, data, currency, sheetSpeaks = new Set()) {
-  const route = { tasks: '/tasks', shopping: '/shopping', birthdays: '/birthdays', meals: '/meals', notes: '/notes', rewards: '/rewards', health: '/health', housekeeping: '/housekeeping' }[id];
+  const route = { tasks: '/tasks',  birthdays: '/birthdays',  notes: '/notes', rewards: '/rewards', health: '/health', housekeeping: '/housekeeping' }[id];
   switch (id) {
     case 'tasks': {
       const open = data.openTaskCount;
@@ -2524,16 +2059,7 @@ function metricTileFor(id, data, currency, sheetSpeaks = new Set()) {
         noteTone: overdue > 0 ? 'danger' : null,
       };
     }
-    case 'shopping': {
-      const items = data.shoppingOpenCount;
-      if (items == null) return null;
-      const lists = data.shoppingOpenLists ?? 0;
-      return {
-        id, route, icon: widgetIcon('shopping'), label: t('nav.shopping'),
-        value: t('dashboard.metricItems', { count: items }),
-        note: items === 0 ? t('dashboard.metricAllBought') : t('dashboard.metricOnLists', { count: lists }),
-      };
-    }
+
     case 'birthdays': {
       const next = (data.birthdays ?? [])[0];
       if (!next) return null;
@@ -2544,15 +2070,7 @@ function metricTileFor(id, data, currency, sheetSpeaks = new Set()) {
         note: next.kind === 'name_day' ? `${next.name} · ${t('birthdays.nameDay')}` : next.name,
       };
     }
-    case 'meals': {
-      const meals = data.todayMeals ?? [];
-      if (!meals.length) return null;
-      return {
-        id, route, icon: widgetIcon('meals'), label: t('nav.meals'),
-        value: t('dashboard.metricMeals', { count: meals.length }),
-        note: meals[0]?.title || t('dashboard.todayMeals'),
-      };
-    }
+
     case 'notes': {
       const notes = data.pinnedNotes ?? [];
       if (!notes.length) return null;
@@ -2667,29 +2185,7 @@ function renderMetricTile(tile) {
   `;
 }
 
-/**
- * Die Kachelreihe zeigt, was sonst NIRGENDS auf dem Schirm steht.
- *
- * @param {Set<string>} shown  die Modul-Ids, die in diesem Layout ein eigenes
- *                             sichtbares Widget haben.
- *
- * DER FILTER IST DIE GANZE AUSSAGE (Critique 2026-08-13, P1). Ohne ihn fuehrte
- * die Reihe mit `tasks` und `shopping` - beide in COCKPIT_COVERED_WIDGETS -,
- * und daneben mit `budget` und `birthdays`, die im Standard-Layout ihr eigenes
- * Widget haben. Gemessen waren alle vier Kacheln Echos von etwas, das im selben
- * Viewport schon stand. PRODUCT.md fuehrt das „ueberlastete Feature-Dashboard"
- * als Anti-Referenz, und eine Zahl zweimal auf einem Schirm ist deren reine
- * Form.
- *
- * Zwei Quellen der Doppelung, zwei Bedingungen:
- *   - das Cockpit fasst vier Domaenen schon zusammen (COCKPIT_COVERED_WIDGETS);
- *   - ein sichtbares Widget sagt seine Zahl selbst, ausfuehrlicher als eine
- *     Kachel es koennte.
- *
- * ES IST EIN FILTER, KEINE ZWEITE LISTE. Wer ein Widget ausblendet, bekommt
- * dessen Kachel - und wer es wieder einblendet, verliert sie. Die Reihe folgt
- * dem Layout, statt eine eigene Vorstellung davon zu pflegen.
- */
+
 function selectMetricTiles(data, currency, shown = new Set(), sheetSpeaks = new Set()) {
   const tiles = METRIC_TILE_ORDER
     .filter((id) => isWidgetModuleEnabled(id))
@@ -2773,17 +2269,12 @@ function sizeSpans(size) {
  * und den ganzen Satz. Ueber null und auf der hohen Kachel aendert sich nichts.
  */
 
-
-
 /**
  * Wann eine Gutschrift kam - rueckwaerts gelesen. `relativeDateLabel` schaut
  * nach vorn (heute, morgen) und schrieb fuer vorgestern "21.09.2026": in einer
  * Zeile, die ohnehin nur die letzten Tage traegt, ist das Jahr Laerm. Es steht
  * nur, wenn es ein anderes ist.
  */
-
-
-
 
 // --------------------------------------------------------
 // Gesundheit-Widget (heutige Medikamenten-Dosen)
@@ -2800,10 +2291,6 @@ function sizeSpans(size) {
 
 
 // Phasenfarbe für den Ring-Bogen; Follikel-/Lutealphase tragen den Modul-Akzent.
-
-
-
-
 
 // --------------------------------------------------------
 // Naehrwerte-Widget (opt-in, #1326)
@@ -2854,82 +2341,6 @@ function fmtDashNum(value) {
 
 /** Menge knapp: 2 bleibt "2", 2,5 wird lokalisiert - wie auf der Vorratsseite,
  *  und ueber denselben Helfer, damit die Einheit mitflektiert („6 Dosen"). */
-function pantryQuantityText(item) {
-  const nf = getNumberFormat({ maximumFractionDigits: 2 });
-  return pantryQuantityLabel(item.quantity, item.unit, { t, formatNumber: (n) => nf.format(n) });
-}
-
-/**
- * pantryExpiring: { items, todayItems, total, expiredCount, todayCount } aus
- * GET /dashboard (services/pantry-expiring.js) | null (Ladefehler, rendert die
- * geteilte Fehlerkachel ueber den try/catch in renderDashboardLayout).
- *
- * EINE ZEILE IST EINE CHARGE, nicht ein Produkt: zwei Packungen Milch mit zwei
- * Daten sind zwei Zeilen, wie auf der Vorratsseite. Das Haushalts-Produkt ueber
- * der Charge (#1448) steht noch aus, und eine Gruppierung nach Namen waere
- * hier eine zweite, eigene Vorstellung davon.
- *
- * DIE RESTTAGE KOMMEN VOM SERVER (`days_left`), gerechnet am Haushaltstag
- * derselben Antwort, aus der auch Badge und Zaehler stammen. Eine zweite
- * Rechnung hier kippte kurz nach Mitternacht gegen die Badge daneben.
- *
- * Der Ton spricht nur in der Resttage-Zeile, und nur, wo es etwas zu tun gibt:
- * abgelaufen im Gefahrenton, heute und morgen im Warnton, alles Weitere im
- * Sekundaerton. Eine Liste, die jede Zeile rot faerbt, sagt nichts mehr.
- *
- * Reine Anzeige - kein Knopf, der schreibt. Wer nur lesen darf, sieht dieselbe
- * Kachel; die Zeilen fuehren in den passend gefilterten Vorrat.
- */
-function renderPantryWidget(pantry, size) {
-  if (pantry === null || pantry === undefined) throw new Error('pantry widget slice failed to load');
-  const title = t('dashboard.pantryExpiringTitle');
-  const items = Array.isArray(pantry.items) ? pantry.items : [];
-
-  if (!items.length) {
-    return `<div class="widget widget--pantry">
-      ${widgetHeader('pantry', title, null, '/pantry')}
-      <div class="widget__empty">
-        <i data-lucide="archive" class="empty-state__icon" aria-hidden="true"></i>
-        <div>${esc(t('dashboard.pantryExpiringEmpty', { count: EXPIRY_SOON_DAYS }))}</div>
-      </div>
-    </div>`;
-  }
-
-  const shown = items.slice(0, listRowCap(size));
-  const rows = shown.map((item) => {
-    const days = Number(item.days_left);
-    const tone = pantryExpiryTone(days);
-    const phrase = pantryExpiryPhrase(days);
-    const label = phrase.count === undefined ? t(phrase.key) : t(phrase.key, { count: phrase.count });
-    const icon = item.location_icon && hasIcon(item.location_icon) ? item.location_icon : 'package';
-    const meta = [pantryQuantityText(item), item.location_name ? locationLabel(item.location_name) : '']
-      .filter(Boolean).join(' · ');
-    const filter = tone === 'expired' ? 'expired' : 'soon';
-    return `
-      <div class="pantry-widget-row" data-route="/pantry?filter=${filter}" role="button" tabindex="0">
-        <span class="pantry-widget-row__icon" aria-hidden="true"><i data-lucide="${esc(icon)}"></i></span>
-        <div class="pantry-widget-row__body">
-          <div class="pantry-widget-row__name">${esc(item.name)}</div>
-          <div class="pantry-widget-row__meta">${esc(meta)}</div>
-        </div>
-        <div class="pantry-widget-row__days pantry-widget-row__days--${tone}">${esc(label)}</div>
-      </div>`;
-  }).join('');
-
-  // Gezaehlt gegen die SERVER-Gesamtzahl: der Server deckelt die Liste selbst,
-  // und eine Fussnote aus der geladenen Laenge verschwiege genau diesen Schnitt
-  // (dieselbe Lehre wie beim Countdown, #647).
-  const total = Number.isFinite(Number(pantry.total)) ? Number(pantry.total) : items.length;
-  const rest = Math.max(0, total - shown.length);
-  const more = rest > 0
-    ? `<p class="pantry-widget-more">${esc(t('dashboard.pantryExpiringMore', { count: rest }))}</p>`
-    : '';
-
-  return `<div class="widget widget--pantry">
-    ${widgetHeader('pantry', title, total, '/pantry')}
-    <div class="widget__body">${rows}${more}</div>
-  </div>`;
-}
 
 // --------------------------------------------------------
 // Waste-Widget (naechste Abholung je aktivem Typ)
@@ -3236,20 +2647,7 @@ function groupOverdueRows(rows) {
   return [group, ...rows.filter((row) => !overdue.includes(row))];
 }
 
-/**
- * DAS TAGESPROGRAMM ALS MODELL, EINMAL FUER ZWEI FLAECHEN.
- *
- * Es gibt zwei Darstellungen desselben Tages: das Cockpit im normalen
- * Dashboard (Arm-Laenge, bedienbar) und die Wand (zwei Meter, reine Anzeige).
- * Was auf beiden STEHT, ist dieselbe Frage - Deckel, Ausblick, Einkaufszeile,
- * Coda. Zwei Renderer, die diese Regeln je eigenstaendig noch einmal
- * formulieren, waeren die zweite Wahrheit, gegen die der Wand-Modus als
- * Zustand statt als Route gebaut ist. Deshalb steht die Antwort hier und die
- * Form dort.
- *
- * @returns {{rows: object[], overflow: number, state: object|null,
- *            shopping: object|null, coda: string|null}}
- */
+
 /** Der Blatt-Kontext - Cockpit, Wand und Kennzahlreihe fragen denselben. */
 function todaySheetContextFor(cfg, now, existing = [], { isDisplay = false } = {}) {
   const todayKey = zonedDateKey(now);
@@ -3284,10 +2682,8 @@ function buildTodayCockpitModel(data, cfg = [], {
 
   const includeTasks = domainInCockpit('tasks');
   const includeCalendar = domainInCockpit('calendar');
-  const includeMeals = domainInCockpit('meals');
-  const includeShopping = domainInCockpit('shopping');
 
-  const program = buildTodayProgram(data, { includeTasks, includeCalendar, includeMeals, now, viewer });
+  const program = buildTodayProgram(data, { includeTasks, includeCalendar,  now, viewer });
 
   // Die uebrigen Quellen des Blatts (Dosen, Freigaben, Abfuhr, Geburtstag,
   // Schicht, Erinnerungen, Haushaltshilfe) sprechen ueber den Beitrags-Vertrag
@@ -3381,19 +2777,7 @@ function buildTodayCockpitModel(data, cfg = [], {
   }
 
   // Einkauf bleibt die zeitlose Schlusszeile - nur wenn etwas offen ist.
-  const shopping = includeShopping && program.openShoppingCount > 0
-    ? {
-        kind: 'shopping',
-        objectId: null,
-        timeLabel: '',
-        title: t('dashboard.todayShoppingCount', { count: program.openShoppingCount }),
-        sub: t('dashboard.todayShopping'),
-        icon: 'shopping-cart',
-        tone: 'shopping',
-        route: shoppingSoleListRoute(data),
-        who: null,
-      }
-    : null;
+
 
   // Abschluss-Zeile (Peak-End): das beruhigende „danach nichts mehr" - aber nur,
   // wenn das Programm wirklich vollständig ist. Neben „+N weitere" wäre sie
@@ -3421,7 +2805,7 @@ function buildTodayCockpitModel(data, cfg = [], {
   // Zeilen hinter dem Deckel liegen.
   const hidden = sheet.allRows.filter((row) => !visibleRows.includes(row));
   const moreRoute = overflow > 0 ? todayMoreRoute(hidden, sheetContext.todayKey) : null;
-  return { rows: visibleRows, allRows: sheet.allRows, hiddenRows: hidden, overflow, moreRoute, state, shopping, coda };
+  return { rows: visibleRows, allRows: sheet.allRows, hiddenRows: hidden, overflow, moreRoute, state,  coda };
 }
 
 /* „+N WEITERE HEUTE" FUEHRT DORTHIN, WO DIE VERSTECKTEN ZEILEN STEHEN
@@ -3548,7 +2932,7 @@ function renderTodayCockpit(data, cfg = [], editing = false, { now = new Date(),
     ? renderTodayOverdueGroup(row, overdueOpen)
     : renderTodayRow(row, columnClass(index)))));
   const parts = [];
-  const foldShopping = Boolean(model.shopping) && model.overflow > 0 && !model.moreRoute && onPhoneStage();
+
   if (listRows.length) {
     parts.push(`<div class="today-cockpit__rows${split ? ' today-cockpit__rows--split' : ''}"${split ? ` style="--today-rows-per-column:${perColumn}"` : ''}>${listRows.join('')}</div>`);
   }
@@ -3556,8 +2940,7 @@ function renderTodayCockpit(data, cfg = [], editing = false, { now = new Date(),
   // heute" und las sich wie eine der verdeckten Zeilen, die schon aufgeklappt
   // ist. Er ist die zeitlose Schlusszeile des SICHTBAREN Programms; der
   // Aufklapper schliesst das Blatt ab. Auf dem Telefon klappt er weiter mit
-  // (`foldShopping`, R14).
-  if (model.shopping && !foldShopping) parts.push(renderTodayRow(model.shopping));
+
   if (model.overflow > 0 && model.moreRoute) {
     const moreText = esc(t('dashboard.todayMore', { count: model.overflow }));
     parts.push(`<a href="${esc(model.moreRoute)}" class="today-cockpit__more today-cockpit__more--link" data-route="${esc(model.moreRoute)}">
@@ -3568,7 +2951,7 @@ function renderTodayCockpit(data, cfg = [], editing = false, { now = new Date(),
     // hier, zugeklappt, und der Knopf darunter klappt sie auf. Auf dem Telefon
     // klappt die Einkaufszeile mit (R14): sie ist zeitlos, und als eigene
     // Zeile unter dem Knopf schob sie das erste Widget um 64px weiter hinab.
-    const hidden = foldShopping ? [...model.hiddenRows, model.shopping] : model.hiddenRows;
+    const hidden = model.hiddenRows;
     const moreText = t('dashboard.todayMore', { count: hidden.length });
     const lessText = t('dashboard.todayLess');
     parts.push(`<div class="today-cockpit__rows today-cockpit__rows--more" id="today-cockpit-more"${moreOpen ? '' : ' hidden'}>${
@@ -3602,7 +2985,7 @@ function renderTodayCockpit(data, cfg = [], editing = false, { now = new Date(),
   // Zeilenzahl und Tagesumfang stehen am Blatt, damit `measurePhoneProgram`
   // nach dem Zeichnen nachrechnen kann, ohne das Modell ein zweites Mal zu bauen.
   const fit = onPhoneStage() && !editing
-    ? ` data-program-cap="${model.rows.length}" data-program-total="${model.allRows.length}"${model.shopping ? ' data-program-shopping="1"' : ''}`
+    ? ` data-program-cap="${model.rows.length}" data-program-total="${model.allRows.length}"`
     : '';
   return `
     <section class="today-cockpit${editing ? ' today-cockpit--editing' : ''}" aria-labelledby="today-cockpit-title"${fit}>
@@ -3677,7 +3060,7 @@ function renderDashboardOverview(user, editing = false, weather = null, scope = 
   // EIN WANDTABLETT BEKOMMT ZWEI KNOEPFE NICHT, WEIL BEIDE NUR SCHEITERN
   // KOENNEN (#1808). "Anpassen" endet in `PUT /preferences`, und ein Display
   // schreibt genau zwei Routen (`DISPLAY_WRITE_ROUTES`, server/display-scopes.js)
-  // - die gehoert nicht dazu, mit Absicht: wer an der Kuechenwand vorbeigeht,
+
   // hat das Geraet bedient, und "aendert keine Einstellungen" ist seit #1209
   // zugesagt. Der Melder ordnete sein Brett um, tippte "Fertig" und bekam eine
   // 403 - die Oberflaeche bot eine Handlung an, die der Server zu Recht
@@ -3833,21 +3216,7 @@ function focusKeyOf(el) {
   return tile ? `.widget-wrapper[data-widget-id="${CSS.escape(tile)}"] ${own}` : own;
 }
 
-/**
- * Dasselbe fuer eine INHALTSZEILE (#1821): Termin, Notiz, Liste, Aufgabe.
- *
- * Die Flaeche baut nicht nur im Anpassen-Modus neu, sondern auch still - bei
- * der Rueckkehr in den Tab, im Viertelstundentakt, an einer Tagesgrenze, nach
- * dem Wetter. Wer mit der Tastatur auf einer Zeile stand, stand danach auf
- * <body>, und Enter tat nichts mehr. Eine Zeile hat keine Id; ihre Identitaet
- * ist, wohin sie fuehrt (`data-route`, bei Aufgaben `data-task-id`), in welcher
- * Kachel sie steht und - wo mehrere Zeilen dasselbe Ziel haben (Schichtplan,
- * Mahlzeiten) - die wievielte sie ist. Der Fokus kann auch auf einem Kind
- * liegen (der Notizkoerper traegt den Tabstopp, die Karte den Weg).
- *
- * `preventScroll`: der stille Neuaufbau darf niemanden zu einer Zeile
- * zurueckholen, von der er weggescrollt hat.
- */
+
 function rowFocusKeyOf(el) {
   const row = el.closest?.('[data-route], [data-task-id]');
   if (!row) return null;
@@ -4108,14 +3477,7 @@ async function loadWasteTypes() {
  * Liste muss waehlbar sein, und ein Dialog ohne Katalog darf eine bestehende
  * Auswahl nicht als "nichts gewaehlt" speichern.
  */
-async function loadShoppingLists(getLists = (path) => api.get(path)) {
-  try {
-    const res = await getLists('/shopping');
-    return Array.isArray(res?.data) ? res.data : null;
-  } catch {
-    return null;
-  }
-}
+
 
 /**
  * Die waehlbaren Kalender fuer den Optionen-Dialog der Kalender-Kachel (#2062):
@@ -4147,7 +3509,7 @@ async function loadNoteCategories(getCategories = (path) => api.get(path)) {
 
 /** Der Optionen-Dialog eines Widgets. Aufloesen mit den neuen Optionen oder null. */
 async function openWidgetOptions(id, current = {}, {
-  loadNotes = loadNoteCategories, loadLists = loadShoppingLists, loadCalendars = loadCalendarSources,
+  loadNotes = loadNoteCategories,  loadCalendars = loadCalendarSources,
 } = {}) {
 
   const options = { ...current };
@@ -4162,14 +3524,11 @@ async function openWidgetOptions(id, current = {}, {
     window.yuvomi?.showToast(t('dashboard.loadError'), 'danger');
     return null;
   }
-  const shoppingLists = id === 'shopping' ? await loadLists() : [];
-  if (shoppingLists === null) {
-    window.yuvomi?.showToast(t('dashboard.loadError'), 'danger');
-    return null;
-  }
+
+
   // Angehakt ist, was gespeichert UND noch da ist: eine geloeschte Liste hat
   // keine Zeile mehr und faellt mit dem naechsten Speichern aus der Auswahl.
-  const pickedLists = new Set(normalizeShoppingListSelection(options.lists));
+
   // Dieselbe Regel fuer die Kalender (#2062): angehakt ist, was gespeichert UND
   // noch im Katalog ist; ein entfernter Kalender faellt mit dem Speichern weg.
   const calendarChoices = id === 'calendar' ? await loadCalendars() : [];
@@ -4233,17 +3592,6 @@ async function openWidgetOptions(id, current = {}, {
                  ${(options.types ?? []).includes(wt.id) ? 'checked' : ''}>
           <span>${esc(wt.name)}</span>
         </label>`).join('') : `<p class="widget-options__hint">${t('dashboard.optionWasteTypesEmpty')}</p>`}
-      </fieldset>`
-    : id === 'shopping' ? `
-      <fieldset class="form-group widget-options__group">
-        <legend class="form-label">${t('dashboard.optionShoppingLists')}</legend>
-        <p class="widget-options__hint">${t('dashboard.optionShoppingListsHint')}</p>
-        ${shoppingLists.length ? shoppingLists.map((list) => `
-        <label class="widget-options__choice">
-          <input type="checkbox" name="shopping-list" value="${esc(String(list.id))}"
-                 ${pickedLists.has(Number(list.id)) ? 'checked' : ''}>
-          <span>${esc(list.name)}</span>
-        </label>`).join('') : `<p class="widget-options__hint">${t('dashboard.noShoppingLists')}</p>`}
       </fieldset>`
     : id === 'tasks' ? `
       <fieldset class="form-group widget-options__group">
@@ -4317,13 +3665,6 @@ async function openWidgetOptions(id, current = {}, {
             // heisst „alle" - eine seltene Abholung darf nie stillschweigend
             // verschwinden, nur weil niemand den Dialog geoeffnet hat.
             if (picked.length) next.types = picked;
-          } else if (id === 'shopping') {
-            // Keine Auswahl heisst „alle Listen" und wird nicht gespeichert -
-            // das Verhalten von vor der Option (#1818).
-            const picked = normalizeShoppingListSelection(
-              [...panel.querySelectorAll('input[name="shopping-list"]:checked')].map((el) => el.value),
-            );
-            if (picked.length) next.lists = picked;
           } else if (id === 'tasks') {
             const picked = [...panel.querySelectorAll('input[name="task-category"]:checked')].map((el) => el.value);
             // Keine Auswahl heisst „alle" - eine leere Liste als Filter waere
@@ -4495,17 +3836,17 @@ function renderHiddenWidgetsTray(cfg, glanceHidden = false) {
   `;
 }
 
-function renderDashboardLayout(cfg, data, weather, currency, { editing = false, visibleMealTypes = MEAL_ORDER, glanceHidden = false, familyManage = null } = {}) {
+function renderDashboardLayout(cfg, data, weather, currency, { editing = false,  glanceHidden = false, familyManage = null } = {}) {
   const widgetById = {
     tasks: (size) => renderUrgentTasks(data.urgentTasks ?? [], data.openTaskCount, size),
     calendar: (size, options) => renderCalendarWidget(data, size, options),
     birthdays: (size) => renderUpcomingBirthdays(data.birthdays ?? [], size, data.birthdayTotal),
     countdown: (size) => renderCountdowns(data.countdowns ?? [], size, data.countdownTotal),
-    pantry: (size) => renderPantryWidget(data.pantryExpiring, size),
+
     family: () => renderFamilyWidget(data.users ?? [], data, { manageHref: familyManage }),
-    meals: () => renderTodayMeals(data.todayMeals ?? [], visibleMealTypes, data.users),
+
     notes: (size) => renderPinnedNotes(data.pinnedNotes ?? [], size, data.notesTotal),
-    shopping: () => renderShoppingTile(data),
+
     // Hier ankommen heisst eingerichtet (`isWidgetModuleEnabled`); fehlt das
     // Wetter trotzdem, sagt die Kachel es, statt zu verschwinden.
     clock: () => renderClockWidget(),
@@ -4647,97 +3988,8 @@ function renderWidgetError(id) {
 }
 
 // --------------------------------------------------------
-// Shopping-Widget
+
 // --------------------------------------------------------
-
-/**
- * Was die Einkaufs-Kachel aus der Antwort liest (#1818). Mit einer Auswahl
- * liefert die Route `shoppingTile` - die gewaehlten Listen, die offenen Artikel
- * darin und wie viele gewaehlte Listen es gibt. Ohne Auswahl (oder wenn das
- * Feld fehlt) gelten die Felder, die auch das Heute-Blatt und die Wand lesen.
- * Die Kachel ist der EINZIGE Leser von `shoppingTile`.
- */
-function renderShoppingTile(data) {
-  const tile = data?.shoppingTile;
-  if (tile && Array.isArray(tile.lists)) {
-    return renderShoppingLists(tile.lists, tile.openCount, tile.listCount);
-  }
-  return renderShoppingLists(data?.shoppingLists ?? [], data?.shoppingOpenCount, data?.shoppingOpenLists);
-}
-
-function renderShoppingLists(lists, openTotal = null, listTotalCount = null) {
-  if (!lists.length) {
-    return `<div class="widget widget--shopping">
-      ${widgetHeader('shopping', t('nav.shopping'), 0, '/shopping')}
-      <div class="widget__empty">
-        <i data-lucide="shopping-cart" class="empty-state__icon" aria-hidden="true"></i>
-        <div>${t('dashboard.noShoppingLists')}</div>
-        ${emptyStateCta('/shopping', t('shopping.newListButton'))}
-      </div>
-    </div>`;
-  }
-
-  // Der Server liefert hoechstens drei Listen und zaehlt daneben, woraus sie
-  // geschnitten sind (listTotal): ohne Auswahl ueber alle Listen mit Offenem
-  // (`shoppingOpenCount`, `shoppingOpenLists`), mit Auswahl ueber die
-  // gewaehlten (`shoppingTile.openCount`, `.listCount`). Ohne die Zahlen
-  // bleibt es bei der Summe der geladenen Listen.
-  const totalOpen = listTotal(openTotal, lists.reduce((sum, l) => sum + l.open_count, 0));
-  // "+n weitere Listen" nennt, was der Deckel abschneidet. OHNE Auswahl sind
-  // das Listen mit Offenem, und jede gezeigte hat welches. MIT Auswahl (#1818)
-  // ist es JEDE gewaehlte Liste, auch eine fertig gekaufte: "eine gewaehlte
-  // Liste bleibt stehen" haelt nur, wenn die abgeschnittene als "+1" da ist.
-  const moreLists = listTotal(listTotalCount, lists.length) - lists.length;
-
-  const listsHtml = lists.map((list) => {
-    const progress = list.total_count > 0
-      ? Math.round(((list.total_count - list.open_count) / list.total_count) * 100)
-      : 0;
-
-    const itemsHtml = list.items.map((item) => `
-      <div class="shopping-widget-item">
-        <span class="shopping-widget-item__dot"></span>
-        <span class="shopping-widget-item__name">${esc(item.name)}</span>
-        ${item.quantity ? `<span class="shopping-widget-item__qty">${esc(item.quantity)}</span>` : ''}
-      </div>
-    `).join('');
-
-    const moreCount = list.open_count - list.items.length;
-
-    // JEDE ZEILE MEINT EINE LISTE, also fuehrt sie auch dorthin. Ein blankes
-    // `/shopping` oeffnet die erste Liste der Einkaufsseite (die aelteste),
-    // waehrend die Kachel die zuletzt geaenderte zuerst zeigt - der Tipp auf
-    // "Drogerie" landete im Wocheneinkauf. Der Kachelkopf bleibt beim blanken
-    // Pfad: er zaehlt ueber mehrere Listen (alle, oder die gewaehlten) und ist
-    // der Sammelverweis. Eine inzwischen geloeschte id faellt
-    // auf der Einkaufsseite auf die erste Liste zurueck.
-    const listRoute = `/shopping?list=${encodeURIComponent(String(list.id))}`;
-
-    return `
-      <div class="shopping-widget-list" data-route="${esc(listRoute)}" role="button" tabindex="0">
-        <div class="shopping-widget-list__header">
-          <span class="shopping-widget-list__name">${esc(list.name)}</span>
-          <span class="shopping-widget-list__count">${list.total_count - list.open_count}/${list.total_count}</span>
-        </div>
-        <div class="shopping-widget-list__progress">
-          <div class="shopping-widget-list__bar" style="--progress-scale:${progress / 100}"></div>
-        </div>
-        <div class="shopping-widget-list__items">
-          ${itemsHtml}
-          ${moreCount > 0 ? `<div class="shopping-widget-item shopping-widget-item--more">${t('dashboard.shoppingMore', { count: moreCount })}</div>` : ''}
-          ${/* Eine AUSGEWAEHLTE Liste steht auch ohne Offenes da (#1818): die
-                Zeile bleibt der Weg zu ihr und sagt, warum sie leer ist. */ ''}
-          ${list.open_count === 0 ? `<div class="shopping-widget-item shopping-widget-item--more">${esc(t('dashboard.shoppingListNothingOpen'))}</div>` : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  return `<div class="widget widget--shopping">
-    ${widgetHeader('shopping', t('nav.shopping'), totalOpen, '/shopping')}
-    <div class="widget__body">${listsHtml}${listMoreLine('dashboard.shoppingMoreLists', moreLists)}</div>
-  </div>`;
-}
 
 // --------------------------------------------------------
 // Wetter-Widget
@@ -4860,7 +4112,7 @@ function startClockTicker(container, signal, onTick = null) {
 const FAB_ACTIONS = () => [
   { route: '/tasks',    label: t('dashboard.fabTask'),     icon: 'check-square'   },
   { route: '/calendar', label: t('dashboard.fabCalendar'), icon: 'calendar-plus'  },
-  { route: '/shopping', label: t('dashboard.fabShopping'), icon: 'shopping-cart'  },
+
   { route: '/notes',    label: t('dashboard.fabNote'),     icon: 'sticky-note'    },
 ].filter((a) => navModuleAccess(a.route.slice(1)) === 'write');
 
@@ -4920,7 +4172,7 @@ function wireNewMenu(container, signal) {
 const FAB_NEW_BTN = {
   '/tasks':    '#btn-new-task',
   '/calendar': '#fab-new-event',
-  '/shopping': '#fab-new-item',
+
   '/notes':    '#fab-new-note',
 };
 
@@ -5147,8 +4399,8 @@ function wireLinks(container, rerender, { editing = false, user = null } = {}) {
     // also trifft der Klick auch dieses Objekt - die Leseansicht der Aufgabe
     // wie bei den Zeilen des Tasks-Widgets, statt den Nutzer in der
     // Aufgabenliste erneut suchen zu lassen (Critique P3).
-    // Essen-Zeile bewusst ohne Sonderweg: /meals öffnet die aktuelle Woche und
-    // scrollt den Heute-Slot selbst in den Blick (meals.js, day-header--today).
+
+
     if (!editing && el.dataset.objectKind === 'task' && el.dataset.objectId) {
       const show = () => openTaskFromOverview(el.dataset.objectId, container, rerender, user);
       el.addEventListener('click', show);
@@ -5431,13 +4683,6 @@ export async function render(container, { user, signal: routeSignal = null } = {
   });
   // ERSTE SCHRITTE (R23 D14): nach dem Rundgang drei Wege - Familie, Module,
   // Region - an derselben Stelle wie der Zonen-Hinweis, vom ersten Bild an
-  // (utils/first-steps.js). Den Haken der Mitglieder setzt das Laden.
-  const mountSteps = () => mountFirstSteps(container.querySelector('.dashboard'), {
-    user, t, wall: wallMode,
-    before: container.querySelector('#dashboard-shell'),
-    navigate: (path) => window.yuvomi?.navigate(path),
-  });
-  let firstSteps = mountSteps();
 
   // Ein Neuaufbau AUS DER SEITE HERAUS laeuft nicht durch renderPage() im
   // Router, und damit an dessen FAB-Wechsel vorbei (#634): den alten Knopf aus
@@ -5465,7 +4710,7 @@ export async function render(container, { user, signal: routeSignal = null } = {
   // nach dem Laden bleibt und ersetzt diesen hier - `wireWallTimer` raeumt
   // seinen vorigen Takt selbst ab.
 
-  let data         = { upcomingEvents: [], urgentTasks: [], todayMeals: [], pinnedNotes: [], shoppingLists: [], birthdays: [], countdowns: [], users: [], budget: {}, rewards: {}, health: {}, housekeeping: {} };
+  let data         = { upcomingEvents: [], urgentTasks: [],  pinnedNotes: [],  birthdays: [], countdowns: [], users: [], budget: {}, rewards: {}, health: {}, housekeeping: {} };
   // Ein Stand von vorhin darf keine Kachel versprechen: erst nach dem Laden
   // wieder wahr (siehe die Notiz an `countdownAvailable`).
   setCountdownAvailability([]);
@@ -5497,7 +4742,7 @@ export async function render(container, { user, signal: routeSignal = null } = {
   let isCustomizing = false;
   let screensaverEnabled = false;
   let currency     = 'EUR';
-  let visibleMealTypes = MEAL_ORDER;
+
   let loadFailed   = false;
   let loadErrorStatus = null;
   // Zeitpunkt des letzten geglueckten Datenstands - der Anker im Masthead (A8).
@@ -5532,9 +4777,9 @@ export async function render(container, { user, signal: routeSignal = null } = {
     // Ueberholt oder verlassen, waehrend die Antworten unterwegs waren (#977):
     // dieser Aufbau gehoert niemandem mehr und faesst die Flaeche nicht an.
     if (signal.aborted) return;
-    primeMealTypeNames(prefsRes?.data);
+
     data         = dashRes;
-    firstSteps.update(Array.isArray(data?.users) ? data.users.length : null);
+
     /* Die Zahlen an den Nav-Zielen und Modulkacheln kommen aus derselben
      * Antwort (#868). Sie hier hereinzureichen spart die zweite Aggregation,
      * die der Shell-Aufbau sonst beim Anmelden anstiess - `layoutHintQuery`
@@ -5589,7 +4834,7 @@ export async function render(container, { user, signal: routeSignal = null } = {
     rememberLayoutHint(widgetConfig, dashboardQuery(widgetConfig), calendarListRowsOf);
     screensaverEnabled = Boolean(prefsRes.data?.screensaver_enabled);
     currency     = prefsRes.data?.currency ?? 'EUR';
-    visibleMealTypes = normalizeVisibleMealTypes(prefsRes.data?.visible_meal_types);
+
     // Ein gemerkter Stand behaelt seine Zeit: er ist nicht frischer, weil er
     // noch einmal gezeichnet wird.
     if (memo) {
@@ -5609,7 +4854,7 @@ export async function render(container, { user, signal: routeSignal = null } = {
   // nicht in den familienweiten /dashboard-Payload. Einmal je Stand (data.cycle
   // bleibt sonst undefined = „noch nie geladen"; der stille Refresh setzt ihn
   // zurueck und holt neu). Ein Fehler lässt die Kachel auf ihren
-  // Onboarding-Empty fallen, statt das Dashboard zu kippen.
+
 
   // Eigener Slice wie Zyklus, aber aus einem anderen Grund: nicht Privatsphaere,
   // sondern weil /dashboard das Modul schlicht nicht mitfuehrt. `/schedule/entries`
@@ -6239,7 +5484,7 @@ export async function render(container, { user, signal: routeSignal = null } = {
         ${renderDashboardOverview(user, isCustomizing, weather, { followsDefault, canPublish, weatherCard: weatherCardShown })}
         ${cockpitHtml}
       </section>
-      ${renderDashboardLayout(cfg, data, weather, currency, { editing: isCustomizing, visibleMealTypes, glanceHidden: !glanceVisible, familyManage: familyManageHref(user) })}
+      ${renderDashboardLayout(cfg, data, weather, currency, { editing: isCustomizing,  glanceHidden: !glanceVisible, familyManage: familyManageHref(user) })}
       ${isCustomizing ? renderCustomizeFootnote({ followsDefault, canPublish }) : ''}
     `);
       // Telefon: das Blatt fuellt den ersten Schirm (D5). Gemessen im selben
@@ -6259,9 +5504,8 @@ export async function render(container, { user, signal: routeSignal = null } = {
     container.querySelectorAll('[data-widget-retry]').forEach((btn) =>
       btn.addEventListener('click', rerender, { signal: signal }));
     if (window.lucide) window.lucide.createIcons({ el: shell });
-    // Vorschaubilder der Mahlzeitenkachel: Ruecksturz auf den Platzhalter per
+
     // Listener, weil ein `onerror` im Markup gegen die CSP liefe (#1059).
-    wireRecipeThumbs(shell);
     disposeNoteCategories = wireNoteCategoryOverflow(
       shell,
       (count) => getNumberFormat().format(count),
@@ -6456,13 +5700,11 @@ export async function render(container, { user, signal: routeSignal = null } = {
   // Eingerichtet reicht: eine Kachel, die gerade kein Wetter hat, soll es
   // nachholen, sobald der Anbieter wieder antwortet.
 
-  // Weder Onboarding noch Anpassen-Hinweis im Wand-Modus: beide sprechen auf
-  // Arm-Laenge ueber Bedienung, die es dort nicht gibt. Der Onboarding-Merker
   // bleibt bewusst ungesetzt - wer die Wand wieder verlaesst, bekommt seine
   // Einfuehrung dann, wenn sie ihm etwas nuetzt.
   if (wallMode) return;
 
-  // Das Konto entscheidet (onboarding_pending aus /auth/me), nicht mehr allein
+
   // das Geraet - sonst zeigt ein neues Geraet oder ein privates Fenster den
   // Rundgang erneut, obwohl das Konto ihn schon gesehen hat. Der lokale
   // Schluessel bleibt eine ZUSAETZLICHE Bedingung statt zu entfallen: er ist
@@ -6470,18 +5712,9 @@ export async function render(container, { user, signal: routeSignal = null } = {
   // gezielt unterdruecken, ohne einen Testnutzer am Server zu markieren.
   // Aus der Hilfe gewuenscht (router.js, "Rundgang ansehen", R23 S10): einmal,
   // unabhaengig vom Merker am Konto.
-  let replayTour = false;
-  try { replayTour = sessionStorage.getItem('yuvomi-replay-tour') === '1'; sessionStorage.removeItem('yuvomi-replay-tour'); } catch { /* ohne Speicher kein Rundgang */ }
-  if (replayTour || (user?.onboarding_pending && !localStorage.getItem(ONBOARDING_KEY))) {
-    setTimeout(() => showOnboarding(container, () => {
-      // Nach dem Rundgang keine Sackgasse (R23 D14): die Karte beginnt jetzt -
-      // nicht nach einer Wiederholung aus der Hilfe (der Haushalt laeuft schon).
-      if (!replayTour) startFirstSteps();
-      firstSteps = mountSteps();
-      firstSteps.update(Array.isArray(data?.users) ? data.users.length : null);
-      maybeHintCustomize(container);
-    }), 400);
-  } else {
+
+
+  {
     maybeHintCustomize(container);
   }
 }
@@ -6507,18 +5740,7 @@ function todayFingerprint(data, cfg, now = new Date()) {
   ]);
 }
 
-/**
- * Die faelligen Erinnerungen fuer das Heute-Blatt (utils/today-sheet.js).
- *
- * Derselbe Endpunkt, den die Glocke pollt - er filtert Herkuenfte schon nach
- * Modulrecht und Token-Scope (`mayTouchOrigin`), das Blatt waehlt daraus nur
- * noch, welche Herkunft eine Zeile ist. Ein Fehler kostet die Zeilen, nicht
- * die Uebersicht: die Erinnerung spricht weiter ueber Toast und Glocke.
- *
- * `request` IST DIE EINE REGEL DER SEITE (`overviewRequest`): die Wand fragt
- * auch hier die Haushaltsfassung ab, und die ist leer - eine Erinnerung gilt
- * der Person, die um sie gebeten hat, nicht der Kueche (#1817).
- */
+
 async function loadPendingReminders(request = (path) => path, get = (path) => fetchPendingReminders(path, { get: (p) => api.get(p) })) {
   try {
     const res = await get(request('/reminders/pending'));
@@ -6541,7 +5763,7 @@ export const __test = {
   usableOverviewMemo, overviewMemoKey, overviewSignature, watchOverviewWrites,
   getOverviewMemo: () => _overviewMemo,
   setOverviewMemo: (memo) => { _overviewMemo = memo; },
-  childDefaultFor, taskForOthersOnly, customizeLeaveAllowed, setCustomizeFabHidden, renderCalendarWidget, renderUrgentTasks, renderUpcomingEvents, buildTodayHighlights, buildTodayProgram, buildTodayCockpitModel, renderTodayCockpit, renderPinnedNotes, renderPantryWidget, renderFamilyWidget, formatDueDate, normalizeVisibleMealTypes, renderTodayMeals, calendarEventRoute, eventOccurrenceDateKey, eventStartDate, renderDashboardOverview, selectMetricTiles, METRIC_TILE_ORDER, PROGRAM_ROW_CAP, relativeDateLabel, listRowCap, calendarRowCap, calendarListRowsOf, renderDashboardSkeleton, openWidgetOptions, renderFab, widgetHeader, renderDashboardLayout, renderMetricTiles, renderGridHint, captureTileRects, playTileFlip, playGridShift, familyManageHref, customizeHasChanges, focusKeyOf, captureRebuildFocus, restoreFocusAfterRebuild, shoppingSoleListRoute, todayMoreRoute, wireTodayMore, wireTodayOverdue, renderWidgetSizeMenu, renderNewPill, renderCustomizeFootnote, applyRowFill, programRowsThatFit, PROGRAM_ROW_CAP_PHONE, createPhoneProgramFit };
+  childDefaultFor, taskForOthersOnly, customizeLeaveAllowed, setCustomizeFabHidden, renderCalendarWidget, renderUrgentTasks, renderUpcomingEvents, buildTodayHighlights, buildTodayProgram, buildTodayCockpitModel, renderTodayCockpit, renderPinnedNotes,  renderFamilyWidget, formatDueDate,   calendarEventRoute, eventOccurrenceDateKey, eventStartDate, renderDashboardOverview, selectMetricTiles, METRIC_TILE_ORDER, PROGRAM_ROW_CAP, relativeDateLabel, listRowCap, calendarRowCap, calendarListRowsOf, renderDashboardSkeleton, openWidgetOptions, renderFab, widgetHeader, renderDashboardLayout, renderMetricTiles, renderGridHint, captureTileRects, playTileFlip, playGridShift, familyManageHref, customizeHasChanges, focusKeyOf, captureRebuildFocus, restoreFocusAfterRebuild,  todayMoreRoute, wireTodayMore, wireTodayOverdue, renderWidgetSizeMenu, renderNewPill, renderCustomizeFootnote, applyRowFill, programRowsThatFit, PROGRAM_ROW_CAP_PHONE, createPhoneProgramFit };
 
 // `signal` ist der Controller des Aufbaus, der die Wetterkarte gezeichnet hat
 // (#976/#977). Vorher las diese Funktion das Modul-Feld `_fabController` -
@@ -6569,7 +5791,7 @@ export const __test = {
 // Test-Tor fuer die Klarheits-Runde (test/test-dashboard-clarity.js): eigene
 // Zeile statt Verlaengerung der langen `__test`-Liste oben, damit parallele
 // Aenderungen an beiden nicht in derselben Zeile kollidieren.
-Object.assign(__test, { renderUpcomingEvents, renderShoppingLists, renderShoppingTile, loadShoppingLists, loadPendingReminders, renderDashboardLayout, wireLinks });
+Object.assign(__test, { renderUpcomingEvents,    loadPendingReminders, renderDashboardLayout, wireLinks });
 
 // Test-Tor fuer die Uebersichts-Bugs vom 2026-09-29 (#1449, #1451-#1457).
 

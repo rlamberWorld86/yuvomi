@@ -1,45 +1,11 @@
-/**
- * Modul: Heute-Blatt - der Beitrags-Vertrag
- * Zweck: Welche Module im Blatt „Heute wichtig" sprechen, in welcher Form, und
- *        nach welcher Regel das Blatt sortiert, deckelt und seine Coda setzt.
- * Abhaengigkeiten: /i18n.js, /permissions.js, /nav-icons.js, /utils/timezone.js,
- *                  /utils/pantry-status.js
- *
- * WARUM ES DIESEN VERTRAG GIBT (Dashboard-Critique 23.09.2026, P1). Das Blatt
- * las nur Termine, Aufgaben, Essen und Einkauf und schloss mit „Danach steht
- * heute nichts mehr an" - waehrend dieselbe Antwort von /dashboard zwei offene
- * Dosen und eine wartende Freigabe trug. Jede Quelle, die das Blatt nicht
- * kannte, war eine Stelle, an der die Coda log. Deshalb steht hier EINE Liste
- * von Quellen mit EINER Zeilenform, und Cockpit wie Wand lesen dieselbe.
- *
- * DIE ZEILE. Jede Quelle liefert Objekte dieser Form:
- *   kind      'dose' | 'approval' | ... - was die Zeile ist (Anker, Dedupe)
- *   sortKey   'HH:MM' - Platz im Tag; Zeitloses ordnet sich ein:
- *             00:00 schon faellig, 00:01 den ganzen Tag, 00:02 heute ohne Zeit
- *   tone      Raum der Zeile (CSS `today-cockpit-card--<tone>`, `wall-row--<tone>`)
- *   icon      Siegel-Zeichen (Name aus MODULE_ICON)
- *   title     was (Textfarbe), sub: woher (ruhiger Untertitel)
- *   timeLabel optionale Zeitangabe rechts; overdue faerbt sie
- *   route     Ziel beim Antippen
- *   who       Person, die die Zeile angeht (Ueberlappungszeichen) oder null
- *   priority  kleiner = wichtiger; entscheidet, was unter dem Deckel bleibt
- *   open      ist hier noch etwas ZU TUN? Nur offene Zeilen halten die Coda auf
- *
- * EINE NEUE QUELLE ANDOCKEN: ein Eintrag in TODAY_SHEET_SOURCES mit `module`,
- * `widget` und `collect(data, ctx)`, der aus einem Feld der /dashboard-Antwort
- * Zeilen dieser Form macht, dazu die Tonklassen `today-cockpit-card--<tone>` und
- * `wall-row--<tone>` in dashboard.css. Modulschalter, Widget-Recht und die
- * Kein-Echo-Regel prueft `sourceSpeaks()` fuer alle gleich; die Quelle muss nur
- * ihre Daten lesen. Das juengste Beispiel ist der Vorrat (`id: 'pantry'`,
- * liest `pantryExpiring.todayItems`/`todayCount`).
- */
+
 
 import { t, formatTime } from '/i18n.js';
 import { canSeeWidget as canSeeWidgetDefault, isPermAdmin, moduleAccess } from '/permissions.js';
 import { MODULE_ICON } from '/nav-icons.js';
 import { zonedDateKey, zonedTimeKey } from '/utils/timezone.js';
 import { housekeepingSinceLabel } from '/utils/day-label.js';
-import { pantryExpiryPhrase } from '/utils/pantry-status.js';
+
 import { shiftTypeLabel } from '/utils/shift-label.js';
 
 /** Zeitlose Plaetze im Tag - dieselben drei Stufen, die das Programm schon kennt. */
@@ -57,17 +23,7 @@ const WASTE_PICKUP_SETTLED = '12:00';
  * steht deshalb im Programm am Abend. */
 const WASTE_PUT_OUT_SORT = '18:00';
 
-/**
- * Welche Erinnerungen das Blatt zeigt, und in wessen Ton.
- *
- * Nicht jede faellige Erinnerung ist eine Blatt-Zeile: Abfuhr und Schicht
- * haben hier eine eigene Quelle (eine zweite Zeile waere ein Echo), Zyklus und
- * Fasten sind Stupser ihrer eigenen Kacheln, und der Vorrat spricht ueber seine
- * eigene Quelle (`pantry`). Was hier nicht steht, spricht weiter ueber Toast
- * und Glocke. `echo` nennt das Widget, das dasselbe Objekt schon zeigen wuerde;
- * `widget` das Widget, dessen Sperre die Erinnerung stumm schaltet (nur wo das
- * Modul eine Kachel hat - sonst gilt allein das Modulrecht).
- */
+
 const REMINDER_SHEET_ORIGINS = {
   task:                   { module: 'tasks',     widget: 'tasks',    tone: 'task',      icon: MODULE_ICON.tasks,     route: '/tasks',     kind: 'task',  echo: 'tasks' },
   event:                  { module: 'calendar',  widget: 'calendar', tone: 'event',     icon: MODULE_ICON.calendar,  route: '/calendar',  kind: 'event', echo: 'calendar' },
@@ -121,39 +77,7 @@ export const TODAY_SHEET_SOURCES = [
         }));
     },
   },
-  {
-    // Vorrat, der HEUTE ablaeuft (Dashboard-Critique 23.09.2026, #1448). Wie
-    // die Tonne: mehrere Chargen eines Tages sind EINE Zeile, und sie ist ein
-    // Auftrag (heute aufbrauchen), haelt also die Coda auf. Abgelaufenes und
-    // „bald" bleiben der Vorrats-Kachel - das Blatt kennt nur heute. Die
-    // Namen kommen gedeckelt (`todayItems`), die Zahl ungedeckelt
-    // (`todayCount`); was darueber hinausgeht, steht als „+N weitere" da.
-    id: 'pantry',
-    module: 'pantry',
-    widget: 'pantry',
-    collect(data) {
-      const slice = data?.pantryExpiring;
-      const items = Array.isArray(slice?.todayItems) ? slice.todayItems : [];
-      if (!items.length) return [];
-      const names = joinNames(items.map((item) => item.name));
-      const rest = Math.max(0, (Number(slice.todayCount) || 0) - items.length);
-      const phrase = pantryExpiryPhrase(0);
-      return [{
-        kind: 'pantry',
-        objectId: null,
-        sortKey: SORT_ALL_DAY,
-        timeLabel: '',
-        title: rest ? `${names} ${t('dashboard.pantryExpiringMore', { count: rest })}` : names,
-        sub: t(phrase.key),
-        icon: MODULE_ICON.pantry,
-        tone: 'pantry',
-        route: '/pantry?filter=soon',
-        who: null,
-        priority: 30,
-        open: true,
-      }];
-    },
-  },
+
   {
     // Faellige Erinnerungen - die, um die man ausdruecklich gebeten hat. Eine
     // Erinnerung an eine Aufgabe, die ohnehin als Zeile im Blatt steht, ist
@@ -210,7 +134,7 @@ export function sourceSpeaks(source, ctx) {
 /** Module, die ein Display auf der Wand zeigen darf, obwohl sein Credential
  *  `none`-Zugang hat: der Server liefert sie nur fuer `audience=household`,
  *  und die Wand braucht sie im Programm (#1903). */
-const WALL_DISPLAY_MODULES = new Set(['meals', 'shopping', 'housekeeping', 'waste', 'pantry']);
+const WALL_DISPLAY_MODULES = new Set(['housekeeping', 'waste']);
 
 /**
  * Der Kontext, den jede Quelle liest. Die Riegel kommen von aussen, damit

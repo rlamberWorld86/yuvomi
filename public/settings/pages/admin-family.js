@@ -201,8 +201,8 @@ function memberHtml(u, currentUserId, { orderable = false, aligned = false } = {
   // Ehemalige stehen in dieser Verwaltung, aber nicht in der Reihenfolge.
   const handle = orderable ? `
       <button type="button" class="row-action settings-member__drag" data-member-handle="${u.id}"
-              aria-label="${esc(t('shopping.reorderHandle', { name: u.display_name }))}"
-              title="${esc(t('shopping.reorderHandleHint'))}">
+              aria-label="${esc(t('common.reorderHandle', { name: u.display_name }))}"
+              title="${esc(t('common.reorderHandleHint'))}">
         <i data-lucide="grip-vertical" class="icon-md" aria-hidden="true"></i>
       </button>`
     // Eine Zeile ohne Position (Personal, Gast, ehemalig) haelt den Platz des
@@ -531,7 +531,7 @@ function refreshMemberHandles(list) {
   rows.forEach((row, idx) => {
     const name = row.querySelector('[data-member-name]')?.textContent?.trim() ?? '';
     row.querySelector('.settings-member__drag')?.setAttribute('aria-label',
-      `${t('shopping.reorderHandle', { name })}, ${t('shopping.reorderPosition', { index: idx + 1, total: rows.length })}`);
+      `${t('common.reorderHandle', { name })}, ${t('common.reorderPosition', { index: idx + 1, total: rows.length })}`);
   });
 }
 

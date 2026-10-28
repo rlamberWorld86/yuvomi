@@ -453,7 +453,7 @@ function paintFaces(scope, items) {
  * Schritt per Pfeiltaste zieht `refreshHandleLabels` es nach.
  */
 function handleLabel(name, index, total) {
-  return `${t('shopping.reorderHandle', { name })}, ${t('shopping.reorderPosition', { index, total })}`;
+  return `${t('common.reorderHandle', { name })}, ${t('common.reorderPosition', { index, total })}`;
 }
 
 /**
@@ -466,7 +466,7 @@ function handleLabel(name, index, total) {
 function handleHtml(name, index, total) {
   return `
       <button type="button" class="row-action list-row__drag quick-link-manage-row__handle" data-sortable-handle
-              aria-label="${esc(handleLabel(name, index, total))}" title="${esc(t('shopping.reorderHandleHint'))}">
+              aria-label="${esc(handleLabel(name, index, total))}" title="${esc(t('common.reorderHandleHint'))}">
         <i data-lucide="grip-vertical" class="icon-md" aria-hidden="true"></i>
       </button>`;
 }

@@ -7,7 +7,6 @@ import { wireScrollFade } from '/utils/ux.js';
 import { MODULE_ICON, moduleIconHTML } from '/nav-icons.js';
 import { createRetryState } from './components.js';
 import { watchLeafForms } from './dirty-guard.js';
-import { KITCHEN_CHILD_IDS } from './module-order.js';
 import { resetPreferencesCache } from './preferences-cache.js';
 import {
   filterSettingsDomains,
@@ -798,7 +797,6 @@ function createLeafHeader(leaf, user) {
  */
 function moduleEnabled(moduleId) {
   const disabled = (id) => Boolean(window.yuvomi?.isModuleDisabled?.(id));
-  if (moduleId === 'kitchen') return KITCHEN_CHILD_IDS.some((id) => !disabled(id));
   return !disabled(moduleId);
 }
 

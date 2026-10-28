@@ -167,7 +167,7 @@ export function reminderTargetVisibleSql(database, alias = 'r', viewer = `${alia
 export const HOUSEHOLD_CHANNEL_POLICY = Object.freeze({
   ...Object.fromEntries(Object.keys(TARGETS).map((type) => [type, 'row'])),
   document_expiry:       'row',
-  pantry_item:           'household',
+
   waste_pickup:          'household',
   cycle_period:          'personal',
   cycle_log_nudge:       'personal',
@@ -175,7 +175,7 @@ export const HOUSEHOLD_CHANNEL_POLICY = Object.freeze({
   fasting_goal:          'personal',
   fasting_next_start:    'personal',
   // Die Meldung gehoert der Person, die verschoben hat (#1912).
-  shopping_move_returned: 'personal',
+
   schedule_entry:        'personal',
   schedule_extra_entry:  'personal',
 });

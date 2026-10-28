@@ -115,7 +115,6 @@ export function tagsKey(tags) {
 
 const STORES = {
   task:     { table: 'task_tags',          fk: 'task_id' },
-  shopping: { table: 'shopping_item_tags', fk: 'item_id' },
 };
 
 /** Tags einer Zeile, alphabetisch. */
@@ -176,21 +175,6 @@ export function loadTagsFor(database, taskIds) {
 /** Setzt die Tags einer Aufgabe neu (Replace-Set). */
 export function setTags(database, taskId, tags) {
   return set(database, STORES.task, taskId, tags);
-}
-
-/** Tags eines Einkaufspostens, alphabetisch. */
-export function loadItemTags(database, itemId) {
-  return load(database, STORES.shopping, itemId);
-}
-
-/** Tags mehrerer Einkaufsposten in einer Abfrage. */
-export function loadItemTagsFor(database, itemIds) {
-  return loadFor(database, STORES.shopping, itemIds);
-}
-
-/** Setzt die Tags eines Einkaufspostens neu (Replace-Set). */
-export function setItemTags(database, itemId, tags) {
-  return set(database, STORES.shopping, itemId, tags);
 }
 
 /**

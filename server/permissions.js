@@ -56,9 +56,6 @@ export const PERMISSION_MODULES = Object.freeze([
   { key: 'tasks',        labelKey: 'nav.tasks',        icon: 'check-square',  navIds: ['tasks'] },
   { key: 'notes',        labelKey: 'nav.notes',        icon: 'sticky-note',   navIds: ['notes'] },
   { key: 'contacts',     labelKey: 'nav.contacts',     icon: 'book-user',     navIds: ['contacts'] },
-  { key: 'meals',        labelKey: 'nav.kitchen',      icon: 'utensils',      navIds: ['meals', 'recipes'] },
-  { key: 'shopping',     labelKey: 'nav.shopping',     icon: 'shopping-cart', navIds: ['shopping'] },
-  { key: 'pantry',       labelKey: 'nav.pantry',       icon: 'archive',       navIds: ['pantry'] },
   { key: 'inventory',    labelKey: 'nav.inventory',    icon: 'package',       navIds: ['inventory'] },
   { key: 'budget',       labelKey: 'nav.budget',       icon: 'wallet',        navIds: ['budget'] },
   { key: 'documents',    labelKey: 'nav.documents',    icon: 'folder-lock',   navIds: ['documents'] },
@@ -77,8 +74,8 @@ export const PERMISSION_MODULES = Object.freeze([
 export const PERMISSION_WIDGETS = Object.freeze([
   { id: 'tasks',        module: 'tasks' },
   { id: 'calendar',     module: 'calendar' },
-  { id: 'meals',        module: 'meals' },
-  { id: 'shopping',     module: 'shopping' },
+
+
   { id: 'birthdays',    module: 'calendar' },
   { id: 'budget',       module: 'budget' },
   { id: 'rewards',      module: 'rewards' },
@@ -93,7 +90,7 @@ export const PERMISSION_WIDGETS = Object.freeze([
   { id: 'schedule',     module: 'schedule' },
   { id: 'waste',        module: 'waste' },
   // „Läuft bald ab" (Critique 2026-09-23): Chargen aus dem Vorrat.
-  { id: 'pantry',       module: 'pantry' },
+
   { id: 'notes',        module: 'notes' },
   { id: 'family',       module: null },
   { id: 'weather',      module: null },

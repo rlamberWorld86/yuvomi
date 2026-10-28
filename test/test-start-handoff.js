@@ -171,10 +171,10 @@ test('a failing /version has a taker before anything is awaited', async () => {
   assert.deepEqual(seen, []);
 });
 
-test('syncPreferencesOnce runs its three requests side by side and navigate waits for all of them', () => {
+test('syncPreferencesOnce runs its retained requests side by side and navigate waits for all of them', () => {
   const router = read('../public/router.js');
   const body = router.slice(router.indexOf('async function syncPreferencesOnce() {'), router.indexOf('function applyStartPreferences('));
-  assert.match(body, /await Promise\.all\(\[preferencesApplied, versionApplied, syncThirdPartyModules\(\)\]\);/);
+  assert.match(body, /await Promise\.all\(\[preferencesApplied, versionApplied\]\);/);
   assert.equal([...body.matchAll(/\bawait\b/g)].length, 1, 'kein zweites await, das die drei wieder hintereinander stellt');
   assert.match(body, /startHandoff\.takeVersion\(\) \?\? api\.get\('\/version'\)/);
   assert.match(body, /if \(sameSession\(\)\) applyStartPreferences\(res\)/,

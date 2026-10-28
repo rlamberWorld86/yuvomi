@@ -629,9 +629,9 @@ class CategoryManagerElement extends HTMLElement {
    * Pfeiltaste haben. Das Label nennt Objekt und Position.
    */
   _handleHtml(name, cls, position, total) {
-    const label = `${t('shopping.reorderHandle', { name })}, ${t('shopping.reorderPosition', { index: position, total })}`;
+    const label = `${t('common.reorderHandle', { name })}, ${t('common.reorderPosition', { index: position, total })}`;
     return `<button type="button" class="row-action list-row__drag ${cls}" data-reorder-handle
-              aria-label="${esc(label)}" title="${esc(t('shopping.reorderHandleHint'))}">
+              aria-label="${esc(label)}" title="${esc(t('common.reorderHandleHint'))}">
               <i data-lucide="grip-vertical" class="icon-md" aria-hidden="true"></i>
             </button>`;
   }

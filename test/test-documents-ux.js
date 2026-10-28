@@ -217,36 +217,9 @@ test('die Liste ist sortierbar und merkt sich die Wahl', () => {
 // P3 — Restbefunde
 // --------------------------------------------------------
 
-test('der DMS-Button belegt seinen Platz von Anfang an (kein Layout-Sprung)', () => {
-  // Er wurde früher erst nach dem await nachgehängt und schob die Ansicht-Umschaltung zur Seite.
-  assert.match(page, /id="documents-dms-link-btn"[\s\S]{0,300}hidden>/);
-  assert.match(page, /btn\.hidden = !state\.dmsAccounts\.length/);
-});
 
-test('die DMS-Suche unterscheidet Fehler von "keine Treffer"', () => {
-  // Ein toter DMS-Server sah vorher aus wie ein leeres Suchergebnis.
-  assert.match(page, /const showSearchError = \(q\) =>/);
-  assert.ok(page.includes("t('documents.dmsSearchError')"));
-  assert.ok(page.includes("t('common.retry')"));
-  assert.ok(page.includes("t('documents.dmsSearching')"));
-});
 
-test('das DMS-Suchfeld hat ein sichtbares Label', () => {
-  // Seit Runde 5 (2026-09-26) ist das Feld das geteilte Suchfeld: renderPageSearch
-  // benennt es ueber sein eigenes <label>; die sichtbare Zeile darueber traegt
-  // denselben Text und ist aria-hidden, damit der Name nicht doppelt ankommt.
-  const modal = page.slice(page.indexOf('function openDmsLinkModal('), page.indexOf('function renderDmsResults('));
-  assert.match(modal, /searchLabel\.textContent = t\('documents\.dmsSearchLabel'\);/);
-  assert.match(modal, /searchLabel\.setAttribute\('aria-hidden', 'true'\)/);
-  assert.match(modal, /renderPageSearch\(\{\s*id: 'dms-search',\s*label: t\('documents\.dmsSearchLabel'\)/);
-  assert.match(modal, /root\.append\(searchLabel, searchField,/);
-});
 
-test('die DMS-Verknüpfung erbt nicht stillschweigend das aktive Filter-Chip', () => {
-  const linkCall = page.slice(page.indexOf("api.post('/documents/dms/link'"), page.indexOf("api.post('/documents/dms/link'") + 260);
-  assert.match(linkCall, /category: 'other'/);
-  assert.doesNotMatch(linkCall, /state\.category/);
-});
 
 test('Ordnerlöschung bietet Behalten oder Mitlöschen mit exakten Server-Zahlen an', () => {
   const block = page.slice(page.indexOf('function folderDeleteChoice('), page.indexOf('// `showSize`'));
@@ -287,27 +260,6 @@ test('ein leerer Ordner bestätigt den exakten Null-Dokumente-Impact', () => {
   assert.doesNotMatch(branch, /deleteFolderConfirmDetail|deleteFolderSubtreeDetail/);
 });
 
-test('die DMS-Vorschau ist groß genug zum Erkennen und lässt sich vergrößern (#536)', () => {
-  // 40x40 zeigte nur einen grauen Fleck: die Kachel steht jetzt im Seitenformat
-  // und der Seitenkopf bleibt sichtbar, statt mittig weggeschnitten zu werden.
-  const media = css.slice(css.indexOf('.dms-result__media {'), css.indexOf('.dms-result__media svg'));
-  assert.match(media, /width:\s*72px/);
-  assert.match(media, /height:\s*96px/);
-  assert.match(css, /\.dms-result__thumb\s*\{[^}]*object-position:\s*top/);
-
-  // Klick auf die Kachel öffnet die große Vorschau - kein zweites openModal,
-  // weil das Modal-System genau ein Overlay hält.
-  assert.match(page, /function openDmsPreview\(/);
-  assert.ok(page.includes("t('documents.dmsPreviewOpen')"));
-  const preview = page.slice(page.indexOf('function openDmsPreview('), page.indexOf('function readFileAsDataUrl'));
-  assert.doesNotMatch(preview, /openSharedModal|openModal\(/);
-  // Escape schließt zuerst nur die Vorschau (Capture-Phase vor dem Modal-Handler).
-  assert.match(preview, /addEventListener\('keydown', onKey, true\)/);
-  assert.match(preview, /e\.stopPropagation\(\)/);
-  // Verknüpfen ist direkt aus der Vorschau möglich und teilt sich den Pfad mit der Liste.
-  assert.ok(preview.includes("t('documents.dmsLinkBtn')"));
-  assert.match(page, /async function linkDmsDocument\(/);
-});
 
 test('Mehrfachauswahl ist opt-in, und ihre Leiste ist die Pille der Shell (R11 H4)', () => {
   // Re-Critique 2026-09-27 (H4): die eigene Leiste ueber der Liste - vier
@@ -827,7 +779,7 @@ test('der Ablauf-Chip steht als ERSTES Meta-Element', () => {
   // Er stand zuletzt, und die Zeilen-Meta ist einzeilig mit overflow: hidden:
   // bei 375px war "Laeuft in 5 Tagen ab" 0px sichtbar (Critique P1) - genau
   // die Angabe, fuer die ein Ablaufdatum eingetragen wird.
-  const meta = page.slice(page.indexOf('function renderMeta('), page.indexOf('function docSupportsThumbnail'));
+  const meta = fnBody('renderMeta', 'renderRowGlyph');
   const chip = meta.indexOf('${expiryChipHtml(doc)}');
   const category = meta.indexOf('CATEGORY_ICONS[doc.category]');
   assert.ok(chip > 0, 'renderMeta zeigt den Ablauf-Chip');
@@ -1114,14 +1066,6 @@ test('die Dokumentenseite haengt die Vorschauen an das Seitenleben', () => {
   assert.match(page, /const local = documentThumbKind\(doc\) \? ' data-local-thumb' : ''/);
 });
 
-test('der Paperless-Pfad bleibt, wie er war', () => {
-  const fn = page.slice(page.indexOf('function docSupportsThumbnail('), page.indexOf('function renderDocIconSlot('));
-  assert.match(fn, /documentStorageBackend\(doc\) === 'dms'/);
-  assert.match(fn, /doc\.dms_provider === 'paperless'/);
-  const slot = page.slice(page.indexOf('function renderDocIconSlot('), page.indexOf('function renderThumbSlot('));
-  assert.match(slot, /src="\/api\/v1\/documents\/\$\{doc\.id\}\/thumbnail"/);
-  assert.match(slot, /data-thumb="clickable"/);
-});
 
 test('die Rasterkarte traegt eine feste Vorschauflaeche, das Blatt liegt GANZ und unverzerrt darin', () => {
   const rules = [...eachRule(css)];
@@ -1311,7 +1255,7 @@ test('Speicher-Badges sind Ortsetiketten: neutral, Kapsel, unterschieden durch G
   const badge = topRules(read('../public/styles/list-row.css')).find((rule) => rule.selector === '.doc-badge');
   assert.ok(badge, '.doc-badge fehlt in list-row.css');
   assert.match(badge.body, /border-radius:\s*var\(--radius-full\)/);
-  for (const mod of ['dms', 'webdav', 'google-drive', 'folder']) {
+  for (const mod of ['webdav', 'google-drive', 'folder']) {
     const own = rules.filter((rule) => rule.selector.split(',').map((s) => s.trim()).includes(`.doc-badge--${mod}`));
     assert.ok(own.length > 0, `.doc-badge--${mod} fehlt`);
     for (const rule of own) {
@@ -1321,9 +1265,9 @@ test('Speicher-Badges sind Ortsetiketten: neutral, Kapsel, unterschieden durch G
     }
   }
   const fn = fnBody('storageBadgeHtml', 'renderActions');
-  const icons = [...fn.matchAll(/doc-badge--(dms|webdav|google-drive|folder)"><i data-lucide="([a-z-]+)"/g)].map((m) => m[2]);
-  assert.equal(icons.length, 4, 'jedes Ortsetikett traegt seine Glyphe');
-  assert.equal(new Set(icons).size, 4, 'vier verschiedene Glyphen');
+  const icons = [...fn.matchAll(/doc-badge--(webdav|google-drive|folder)"><i data-lucide="([a-z-]+)"/g)].map((m) => m[2]);
+  assert.equal(icons.length, 3, 'jedes Ortsetikett traegt seine Glyphe');
+  assert.equal(new Set(icons).size, 3, 'drei verschiedene Glyphen');
 });
 
 test('der Hinweis im Betrachter hat ein Lesemass', () => {
@@ -1370,7 +1314,7 @@ test('Einzel-Archivieren meldet einen Fehler statt ihn zu verschlucken', () => {
   // archiveSelected hatte ein catch, die Einzelaktion nicht: ein 403/500 lief
   // als unbehandelte Rejection durch, ohne Meldung, mit Erfolgs-Annahme.
   const run = fnBody('runDocumentAction', 'deleteDocuments');
-  const branch = run.slice(run.indexOf("if (action === 'archive')"), run.indexOf("if (action === 'push-dms')"));
+  const branch = run.slice(run.indexOf("if (action === 'archive')"), run.indexOf("if (action === 'delete')"));
   // Seit #1909 sagt reportError den Satz der App statt des Servertexts; was
   // der Toast dann zeigt, faehrt test:documents-errors am echten Handler.
   assert.match(branch, /try \{[\s\S]*api\.patch\(`\/documents\/\$\{doc\.id\}\/archive`[\s\S]*\} catch \(err\) \{[\s\S]*reportError\(err, \{ owner \}\)/);
@@ -1623,7 +1567,7 @@ test('eine Sprungmarke fuehrt an Werkzeugen, Filtern und Ordnern vorbei zum erst
   // layout.css) - nur bei Fokus sichtbar, kein eigenes CSS.
   const head = page.slice(page.indexOf('<div class="documents-page'), page.indexOf('<div class="page-toolbar'));
   assert.match(head, /<a class="sr-only documents-skip" href="#documents-list" data-documents-skip>\$\{t\('documents\.skipToDocuments'\)\}<\/a>/);
-  const skip = fnBody('skipToDocuments', 'renderDmsHeaderBtn');
+  const skip = fnBody('skipToDocuments', 'renderCategoryChips');
   assert.match(skip, /event\.preventDefault\(\);/, 'kein Hash in der Adresse, kein Router-Lauf');
   assert.match(skip, /firstRovingStop\(list\)/);
   assert.match(skip, /list\.setAttribute\('tabindex', '-1'\)/, 'ohne Dokument faengt der Listencontainer den Fokus');
@@ -2087,8 +2031,6 @@ test('jede Ablage sagt auf Touch "tippen" statt "ablegen" - zwei Fassungen, eine
   const sites = [
     ['../public/pages/documents.js', 'documents.dropzoneTitle'],
     ['../public/pages/calendar.js', 'documents.dropzoneTitle'],
-    ['../public/settings/pages/admin-backup.js', 'settings.backupDropzoneTitle'],
-    ['../public/settings/pages/modules-install.js', 'settings.installModuleDropzoneTitle'],
   ];
   for (const [file, key] of sites) {
     const src = read(file);
@@ -2104,7 +2046,7 @@ test('jede Ablage sagt auf Touch "tippen" statt "ablegen" - zwei Fassungen, eine
   assert.match(touch.find((r) => r.selector.trim() === '.u-pointer-only')?.body ?? '', /display:\s*none/, 'der Zeiger-Satz ist am Finger weg');
   assert.match(touch.find((r) => r.selector.trim() === '.u-touch-only')?.body ?? '', /display:\s*inline/, 'und der Touch-Satz steht da');
   const de = JSON.parse(read('../public/locales/de.json'));
-  for (const key of ['documents.dropzoneTitleTouch', 'settings.backupDropzoneTitleTouch', 'settings.installModuleDropzoneTitleTouch']) {
+  for (const key of ['documents.dropzoneTitleTouch']) {
     const value = key.split('.').reduce((o, k) => o?.[k], de);
     assert.match(value ?? '', /^Tippen/, `${key}: der Finger tippt`);
     assert.doesNotMatch(value, /ablegen|ziehen|klicken/, `${key}: kein Wort des Zeigers`);
@@ -2179,4 +2121,9 @@ test('R23: die Ablage prueft die Groesse gleich bei der Wahl', () => {
   const fn = page.slice(page.indexOf('function bindDropzone('), page.indexOf('function reportDropzoneError('));
   assert.match(fn, /const tooBig = files\.find\(\(file\) => file\.size > maxSize\);/);
   assert.match(fn, /setTimeout\(\(\) => reportDropzoneError\(form, t\('documents\.fileTooLargeNamed', \{ name: tooBig\.name \}\)\), 0\)/);
+});
+
+test('Dokumente enthalten keine DMS-Aktionen oder eigene DMS-Oberflaechen mehr', () => {
+  assert.doesNotMatch(page, /openDmsLinkModal|linkDmsDocument|push-dms|documents-dms-link-btn|dmsAccounts/);
+  assert.doesNotMatch(css, /\.dms-|documents-dms-link-btn|doc-badge--dms/);
 });

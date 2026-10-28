@@ -30,7 +30,6 @@ import { decodeHtmlEntities } from './utils/html-entities.js';
 import { toE164, defaultCountryFromConfig } from './utils/phone.js';
 import { todayKey } from './utils/timezone.js';
 import { addMonthsClamped, liftToAnchorDay } from './utils/interval-date.js';
-import { groupBatchesIntoProducts, productKey } from './services/pantry-products.js';
 
 const log = createLogger('DB');
 
@@ -525,7 +524,6 @@ function init({ plaintextBackup = true } = {}) {
   // Only when this build knows every applied migration: as the OLDER version
   // on a newer database (DB_ALLOW_NEWER_SCHEMA) its grouping rules may be
   // outdated, and the newer version adopts on its own next start.
-  if (unknown.length === 0) adoptOrphanPantryBatches(db);
 
   // Erst hier steht garantiert eine beschriebene Datei auf der Platte. Der
   // Header ist der einzige Beleg, der nicht auf einer API-Zusage beruht.
@@ -11892,36 +11890,6 @@ function reconcileAvatarKeyTriggers(database) {
  * stop the server: the batches stay as they were, and the reads do not depend
  * on the product yet.
  */
-function adoptOrphanPantryBatches(database = db) {
-  if (!database) return;
-  try {
-    const hasColumn = database.prepare('PRAGMA table_info(pantry_items)').all()
-      .some((c) => c.name === 'product_id');
-    if (!hasColumn) return;
-  } catch {
-    return; // pantry_items not readable - nothing to adopt.
-  }
-  try {
-    database.exec('SAVEPOINT adopt_pantry_batches');
-    let result;
-    try {
-      result = groupBatchesIntoProducts(database, productKey);
-      database.exec('RELEASE SAVEPOINT adopt_pantry_batches');
-    } catch (err) {
-      database.exec('ROLLBACK TO SAVEPOINT adopt_pantry_batches');
-      database.exec('RELEASE SAVEPOINT adopt_pantry_batches');
-      throw err;
-    }
-    if (result.batches === 0) return;
-    log.warn(
-      `${result.batches} pantry batch(es) had no matching product, probably written by an older version `
-      + `(DB_ALLOW_NEWER_SCHEMA); grouped into products, ${result.created} new (#1448).`
-    );
-  } catch (err) {
-    log.error('Adopting pantry batches without a matching product failed:', err?.message || err);
-  }
-}
-
 /**
  * Aktuelle Schema-Version zurückgeben.
  * @returns {number}
@@ -13114,4 +13082,4 @@ if (globalThis[CHECK_ONLY_HANDSHAKE] !== true) {
   }
 }
 
-export { init, get, transaction, currentVersion, getPath, backupToFile, restoreFromFile, checkBackupFile, isRestoreRunning, isDatabaseOpen, unknownMigrationVersions, MIGRATIONS, migrate, MIGRATION_BUSY_ATTEMPTS, reconcileCriticalSchema, adoptOrphanPantryBatches, _setTestDatabase, _resetTestDatabase };
+export { init, get, transaction, currentVersion, getPath, backupToFile, restoreFromFile, checkBackupFile, isRestoreRunning, isDatabaseOpen, unknownMigrationVersions, MIGRATIONS, migrate, MIGRATION_BUSY_ATTEMPTS, reconcileCriticalSchema, _setTestDatabase, _resetTestDatabase };

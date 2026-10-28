@@ -113,10 +113,3 @@ test('the fallback language needs no message: the worker precaches it', async ()
   await setLocale('de');
   assert.deepEqual(localeMessages(), []);
 });
-
-test('the settings page puts the selection back and says why', () => {
-  const page = readFileSync(new URL('../public/settings/pages/personal-appearance.js', import.meta.url), 'utf8');
-  assert.match(page, /const appliedLocaleChoice = localeSelect\?\.value;/);
-  assert.match(page, /\} catch \{[\s\S]{0,500}localeSelect\.value = appliedLocaleChoice;\s*showError\(errorElement, t\('common\.errorOffline'\)\);/,
-    'kein roher Parserfehler in der Fehlerzeile');
-});

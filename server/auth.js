@@ -8,7 +8,6 @@ import express from 'express';
 import session from 'express-session';
 import rateLimit from 'express-rate-limit';
 import crypto from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import * as db from './db.js';
 import { generateToken, csrfMiddleware } from './middleware/csrf.js';
 import { refuseWhileRestoring } from './middleware/restore-gate.js';
@@ -62,13 +61,6 @@ import * as twoFactor from './services/two-factor.js';
 const log = createLogger('Auth');
 const router = express.Router();
 
-// Die laufende Version, wie sie auch server/index.js und die Changelog-Route
-// lesen. Sie steht hier, weil `/changelog-seen` den Merker aus SERVERWISSEN
-// setzt statt aus dem Body: welche Version installiert ist, weiss der Server,
-// und ein Client koennte es falsch behaupten (#496).
-const { version: APP_VERSION } = JSON.parse(
-  readFileSync(new URL('../package.json', import.meta.url), 'utf-8')
-);
 // Präfix für NEUE API-Tokens. Bereits ausgegebene `oikos_`-Tokens bleiben gültig:
 // validiert wird über den Hash des gesamten Tokens, nicht über den Präfix.
 const API_TOKEN_PREFIX = 'yuvomi_';
@@ -174,18 +166,6 @@ function othersCanRead(database, userId) {
   return PRIVACY_MODULES.filter((key) => resolved.some((modules) => (modules[key] ?? 'write') !== 'none'));
 }
 
-/**
- * Die Einfuehrungs-Version, die ein Konto gesehen haben muss, damit der
- * Onboarding-Rundgang nicht erneut erscheint. Ein Konto mit einer kleineren
- * gespeicherten `users.onboarding_version` bekommt ihn wieder vorgesetzt -
- * angehoben werden muss diese Zahl nur dort, wo eine kuenftige Aenderung eine
- * erneute Einfuehrung rechtfertigt (siehe Migration 168 in db.js).
- */
-// Exportiert, seit die Display-Route sie beim Anlegen setzt (#1208): ein
-// Wandtablett ueberspringt die Begruessungstour. Eine zweite `1` dort waere eine
-// Zahl, die beim naechsten Anheben stillschweigend zurueckbliebe.
-export const CURRENT_ONBOARDING_VERSION = 1;
-
 const USER_PUBLIC_COLUMNS = `
   id,
   username,
@@ -194,9 +174,6 @@ const USER_PUBLIC_COLUMNS = `
   avatar_data,
   role,
   family_role,
-  onboarding_version,
-  changelog_seen_version,
-  changelog_seen_latest,
   ${accessScopeSql('users')} AS access_scope,
   ${deactivatedAtColumnSql('users')},
   ${memberPositionSql('users')} AS sort_order,
@@ -638,18 +615,6 @@ function publicUser(row) {
     // sagt es nicht, das traegt auch ein unplatziertes Mitglied. Unbedingt,
     // weil auch die Antworten auf Anlegen und Aendern in dieser Liste landen.
     is_household_member: Boolean(row.is_household_member),
-    // Ob DIESES Konto den Onboarding-Rundgang noch braucht - jede Abfrage
-    // ueber USER_PUBLIC_COLUMNS traegt die Spalte, daher hier unbedingt statt
-    // ueber die `!== undefined`-Bedingung der beiden Felder darunter.
-    onboarding_pending: row.onboarding_version < CURRENT_ONBOARDING_VERSION,
-    // Die beiden Changelog-Merker (#496). Wie `onboarding_pending` unbedingt:
-    // sie haengen an USER_PUBLIC_COLUMNS, also traegt jede Abfrage sie mit.
-    // `null` heisst "noch nie hingesehen" und ist ein anderer Zustand als
-    // "alles gesehen" - der Client blendet die Liste dann bewusst aus.
-    changelog_seen: {
-      version: row.changelog_seen_version ?? null,
-      latest: row.changelog_seen_latest ?? null,
-    },
     // Nur wenn die Query das Flag mitselektiert (GET /users); andere
     // publicUser-Pfade behalten ihre bisherige Feldmenge.
     ...(row.is_worker !== undefined && { is_worker: Boolean(row.is_worker) }),
@@ -1265,18 +1230,6 @@ function loginPayload(req, user) {
       role:         user.role,
       family_role:  user.family_role,
       access_scope: db.get().prepare(`SELECT ${accessScopeSql('u')} AS access_scope FROM users u WHERE u.id = ?`).get(user.id).access_scope,
-      // Auch hier, aus demselben Grund wie householdSize unten: der Router
-      // fragt nach dem Login nicht extra /me, bevor die Uebersicht rendert.
-      onboarding_pending: user.onboarding_version < CURRENT_ONBOARDING_VERSION,
-      // Und aus demselben Grund die Changelog-Merker (#496): ohne sie kaeme
-      // der Router mit einem Konto ohne Merker in die Uebersicht, haelte den
-      // ersten Blick fuer den allerersten und liesse die "Neu bei dir"-Liste
-      // beim Anmelden weg. Genau das ist beim Bauen passiert, obwohl der
-      // Kommentar darueber davor warnt.
-      changelog_seen: {
-        version: user.changelog_seen_version ?? null,
-        latest: user.changelog_seen_latest ?? null,
-      },
     },
     permissions: clientPermissions(db.get(), user),
     // Auch hier, nicht nur an /me: nach dem Login navigiert der Router
@@ -2821,54 +2774,6 @@ router.get('/me', requireAuth, (req, res) => {
     });
   } catch (err) {
     log.error('/me error:', err);
-    res.status(500).json({ error: 'Internal server error.', code: 500 });
-  }
-});
-
-/**
- * POST /api/v1/auth/onboarding-seen
- * Merkt das Konto als "hat den aktuellen Onboarding-Rundgang gesehen" vor -
- * am Konto, nicht am Geraet, damit er auf einem neuen Geraet oder in einem
- * privaten Fenster nicht erneut erscheint.
- */
-router.post('/onboarding-seen', requireAuth, csrfMiddleware, (req, res) => {
-  try {
-    db.get().prepare('UPDATE users SET onboarding_version = ? WHERE id = ?')
-      .run(CURRENT_ONBOARDING_VERSION, req.authUserId);
-    res.json({ ok: true });
-  } catch (err) {
-    log.error('/onboarding-seen error:', err);
-    res.status(500).json({ error: 'Internal server error.', code: 500 });
-  }
-});
-
-/**
- * POST /api/v1/auth/changelog-seen
- * Body: { latest?: string }
- * Merkt am KONTO, was dieses Konto zuletzt gesehen hat (#496) - nicht am
- * Geraet, sonst zeigt das Tablet dieselbe Liste noch einmal.
- *
- * DIE INSTALLIERTE VERSION KOMMT VOM SERVER, nicht aus dem Body: welche
- * Version hier laeuft, weiss er selbst, und ein Client, der sie mitschickt,
- * koennte sie falsch behaupten. Die veroeffentlichte Version dagegen stammt
- * aus der GitHub-Abfrage, die der Client ohnehin schon hat - fehlt sie, bleibt
- * der bisherige Wert stehen, statt ihn mit null zu ueberschreiben.
- */
-router.post('/changelog-seen', requireAuth, csrfMiddleware, (req, res) => {
-  try {
-    const latest = String(req.body?.latest || '').trim();
-    if (latest && latest.length > 64) {
-      return res.status(400).json({ error: 'Invalid version.', code: 400 });
-    }
-    db.get().prepare(`
-      UPDATE users
-         SET changelog_seen_version = ?,
-             changelog_seen_latest  = COALESCE(NULLIF(?, ''), changelog_seen_latest)
-       WHERE id = ?
-    `).run(APP_VERSION, latest, req.authUserId);
-    res.json({ data: { version: APP_VERSION, latest: latest || null } });
-  } catch (err) {
-    log.error('/changelog-seen error:', err);
     res.status(500).json({ error: 'Internal server error.', code: 500 });
   }
 });

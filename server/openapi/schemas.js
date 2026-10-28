@@ -375,18 +375,17 @@ export const schemas = {
             storage_provider: {
               type: 'string',
               enum: ['local', 'external'],
-              description: 'Legacy compatibility field. local pairs with local; external pairs with webdav, google_drive, or dms.',
+              description: 'Legacy compatibility field. New uploads use external with google_drive.',
             },
             storage_backend: {
               type: 'string',
-              enum: ['local', 'webdav', 'google_drive', 'dms'],
-              description: 'Authoritative location of the document bytes or DMS reference.',
+              enum: ['local', 'webdav', 'google_drive'],
+              description: 'Authoritative location of the document bytes.',
             },
             storage_key: {
               type: ['string', 'null'],
-              description: 'Relative path for folder/WebDAV storage, opaque Google Drive file ID, DMS reference, or null for an in-database BLOB.',
+              description: 'Opaque Google Drive file ID, or a legacy local/WebDAV path.',
             },
-            dms_account_id: { type: ['integer', 'null'] },
             external_url: { type: ['string', 'null'], format: 'uri' },
             folder_id: { type: ['integer', 'null'] },
             folder_name: { type: ['string', 'null'] },
@@ -457,18 +456,6 @@ export const schemas = {
                   type: 'boolean',
                   description: 'Whether the current user is an admin. The client uses this to show deep links into the admin-only document settings only when they are actually reachable.',
                 },
-                dms_accounts: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      id: { type: 'integer' },
-                      name: { type: 'string' },
-                      provider: { type: 'string', enum: ['paperless'] },
-                    },
-                    required: ['id', 'name', 'provider'],
-                  },
-                },
               },
               required: [
                 'categories',
@@ -478,7 +465,6 @@ export const schemas = {
                 'allowed_mime_types',
                 'storage_providers',
                 'active_upload_backend',
-                'dms_accounts',
               ],
             },
           },
@@ -848,12 +834,6 @@ export const schemas = {
             email: { type: ['string', 'null'] },
             birth_date: { type: ['string', 'null'], format: 'date' },
             birth_year_unknown: { type: 'boolean', description: 'Only day and month of `birth_date` are known (#2095); the server then stores the placeholder year 2000 whatever year is sent. Without it, the stored flag only goes when a different date arrives.' },
-            onboarding_pending: {
-              type: 'boolean',
-              description: 'Whether this account still needs the onboarding walkthrough. Derived from '
-                + 'the account, not from the browser, so a new device does not repeat it. '
-                + 'POST /auth/onboarding-seen clears it.',
-            },
             sso_only: {
               type: 'boolean',
               description: 'Only present on GET /auth/users for administrators: the account carries no '
@@ -1171,129 +1151,6 @@ export const schemas = {
             token: { type: 'string' },
           },
           required: ['data', 'token'],
-        },
-        DmsAccount: {
-          type: 'object',
-          description: 'A configured DMS account. The api_token is never returned; use has_token to check whether one is stored.',
-          properties: {
-            id: { type: 'integer' },
-            provider: { type: 'string', enum: ['paperless'], description: 'DMS provider type' },
-            name: { type: 'string' },
-            base_url: { type: 'string', format: 'uri' },
-            created_at: { type: 'string', format: 'date-time' },
-            last_check: { type: ['string', 'null'], format: 'date-time' },
-            has_token: { type: 'boolean', description: 'Whether an API token is stored for this account' },
-          },
-          required: ['id', 'provider', 'name', 'base_url', 'created_at', 'has_token'],
-        },
-        DmsAccountsResponse: {
-          type: 'object',
-          properties: {
-            data: { type: 'array', items: { $ref: '#/components/schemas/DmsAccount' } },
-          },
-          required: ['data'],
-        },
-        DmsAccountResponse: {
-          type: 'object',
-          properties: {
-            data: { $ref: '#/components/schemas/DmsAccount' },
-          },
-          required: ['data'],
-        },
-        DmsAccountCreateRequest: {
-          type: 'object',
-          properties: {
-            provider: { type: 'string', enum: ['paperless'] },
-            name: { type: 'string' },
-            base_url: { type: 'string', format: 'uri' },
-            api_token: { type: 'string', description: 'API token for authenticating with the DMS. Write-only; never returned in responses.' },
-          },
-          required: ['provider', 'name', 'base_url', 'api_token'],
-        },
-        DmsTestResponse: {
-          type: 'object',
-          properties: {
-            data: {
-              type: 'object',
-              properties: {
-                ok: { type: 'boolean' },
-                status: { type: 'integer' },
-              },
-              required: ['ok', 'status'],
-            },
-          },
-          required: ['data'],
-        },
-        DmsSearchResult: {
-          type: 'object',
-          properties: {
-            id: { type: 'integer' },
-            title: { type: 'string' },
-            created: { type: 'string', format: 'date-time' },
-            filename: { type: ['string', 'null'] },
-            url: { type: 'string', format: 'uri' },
-          },
-          required: ['id', 'title'],
-        },
-        DmsSearchResponse: {
-          type: 'object',
-          properties: {
-            data: { type: 'array', items: { $ref: '#/components/schemas/DmsSearchResult' } },
-          },
-          required: ['data'],
-        },
-        DmsLinkRequest: {
-          type: 'object',
-          properties: {
-            account_id: { type: 'integer' },
-            dms_document_id: { type: 'integer' },
-            category: { type: 'string', enum: ['medical', 'school', 'identity', 'insurance', 'finance', 'home', 'vehicle', 'legal', 'travel', 'pets', 'warranty', 'taxes', 'work', 'other'] },
-            visibility: { type: 'string', enum: ['family', 'restricted', 'private'] },
-          },
-          required: ['account_id', 'dms_document_id'],
-        },
-        DmsLinkResponse: {
-          type: 'object',
-          description: 'The created family_documents row. storage_provider is `external` and storage_backend is `dms` for linked DMS documents.',
-          properties: {
-            data: {
-              type: 'object',
-              properties: {
-                id: { type: 'integer' },
-                name: { type: 'string' },
-                category: { type: ['string', 'null'] },
-                visibility: { type: 'string' },
-                storage_provider: { type: 'string', enum: ['external'] },
-                storage_backend: { type: 'string', enum: ['dms'] },
-                dms_account_id: { type: ['integer', 'null'] },
-                external_url: { type: ['string', 'null'], format: 'uri' },
-                created_at: { type: 'string', format: 'date-time' },
-              },
-              required: ['id', 'name', 'storage_provider', 'storage_backend'],
-            },
-          },
-          required: ['data'],
-        },
-        DmsPushRequest: {
-          type: 'object',
-          properties: {
-            account_id: { type: 'integer' },
-            document_id: { type: 'integer' },
-          },
-          required: ['account_id', 'document_id'],
-        },
-        DmsPushResponse: {
-          type: 'object',
-          properties: {
-            data: {
-              type: 'object',
-              properties: {
-                taskId: { type: 'string' },
-              },
-              required: ['taskId'],
-            },
-          },
-          required: ['data'],
         },
         ExtensionModuleWidget: {
           type: 'object',

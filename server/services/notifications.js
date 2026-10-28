@@ -14,9 +14,9 @@ import { webhookProvider } from './notification-providers/webhook.js';
 import { guardedFetch } from './notification-providers/guarded-fetch.js';
 import { syncAllBirthdayReminders } from './birthdays.js';
 import { resolveHouseholdFormats, formatDateKey, translate } from '../utils/i18n.js';
-import { moveNoticeFields } from './shopping-move-notices.js';
+
 import { warrantyEndDate } from './inventory-deadlines.js';
-import { syncAllPantryExpiryReminders } from './pantry-reminders.js';
+
 import { withoutModulesDeniedToRecipient, withoutSwitchedOffModules } from './reminder-origins.js';
 import { reminderTargetPublicSql, reminderTargetVisibleSql } from './reminder-targets.js';
 import { remindAtCompareKey, remindAtUtcSql } from '../utils/reminder-schedule.js';
@@ -105,7 +105,7 @@ const REMINDER_ORIGINS = {
   subscription:           { titleKey: 'subscriptions.tabLabel', url: '/budget' },
   inventory_item:         { titleKey: 'nav.inventory',          url: '/inventory' },
   inventory_tracked_date: { titleKey: 'nav.inventory',          url: '/inventory' },
-  pantry_item:            { titleKey: 'nav.pantry',             url: '/pantry' },
+
   // Beide Zyklus-Herkuenfte teilen sich denselben Titel/Ziel - gleiches
   // Vorbild wie schedule_entry/schedule_extra_entry (Schedule v3), zwei
   // entity_type fuer zwei Sync-Quellen, eine Modul-Beschriftung.
@@ -129,7 +129,7 @@ const REMINDER_ORIGINS = {
   fasting_next_start:     { titleKey: 'health.fasting.title',   url: '/health/fasting' },
   // #1912: der Sprung geht auf die Liste, auf die der Artikel zurueckging
   // (reminderPayload), sonst auf den Einkauf.
-  shopping_move_returned: { titleKey: 'nav.shopping',           url: '/shopping' },
+
 };
 
 /**
@@ -163,10 +163,7 @@ function trackedDateBody(reminder) {
  * Gleiche Begruendung wie die drei Funktionen darueber - reine Daten, kein
  * Satzbau, weil der Server die Sprache des Empfaengers nicht kennt.
  */
-function pantryExpiryBody(reminder) {
-  if (!reminder.pantry_expires_on) return reminder.entity_title;
-  return `${reminder.entity_title} - ${reminder.pantry_expires_on}`;
-}
+
 
 /**
  * Body einer Zyklus-Erinnerung: `entity_title` ist bei diesen Arten das rohe
@@ -212,21 +209,13 @@ function scheduleEntryBody(reminder) {
   return `${reminder.entity_title} - ${reminder.schedule_start_time}`;
 }
 
-/**
- * Body of a Waste pickup reminder: the type name and its raw YYYY-MM-DD
- * pickup date - same reasoning as warrantyBody/trackedDateBody/
- * pantryExpiryBody above (plain data, no sentence, the server doesn't know
- * the recipient's date-format locale).
- */
+
 function wastePickupBody(reminder) {
   if (!reminder.waste_date_key) return reminder.entity_title;
   return `${reminder.entity_title} - ${reminder.waste_date_key}`;
 }
 
-/**
- * Body of a document expiry reminder: the document name and its expiry date -
- * same reasoning as warrantyBody/trackedDateBody/pantryExpiryBody above.
- */
+
 function documentExpiryBody(reminder) {
   if (!reminder.doc_expires_at) return reminder.entity_title;
   return `${reminder.entity_title} - ${reminder.doc_expires_at}`;
@@ -256,15 +245,7 @@ function fastingBody(reminder, locale) {
  * Body der Meldung "Umzug zurueckgenommen" (#1912): ein ganzer Satz in der
  * Haushaltssprache, aus der Momentaufnahme der Meldung.
  */
-function moveReturnedBody(reminder, locale) {
-  const notice = reminder.move_notice;
-  if (!notice) return reminder.entity_title;
-  return translate(locale, notice.reason === 'waited'
-    ? 'shopping.moveReturned.waited'
-    : 'shopping.moveReturned.refused', {
-    item: notice.item_name, back: notice.back_list_name, target: notice.target_list_name,
-  });
-}
+
 
 function reminderPayload(reminder, locale, dateFormat) {
   const title = reminder.entity_title || FALLBACK_BODY;
@@ -276,8 +257,6 @@ function reminderPayload(reminder, locale, dateFormat) {
     body = warrantyBody(reminder);
   } else if (reminder.entity_type === 'inventory_tracked_date' && reminder.entity_title) {
     body = trackedDateBody(reminder);
-  } else if (reminder.entity_type === 'pantry_item' && reminder.entity_title) {
-    body = pantryExpiryBody(reminder);
   } else if ((reminder.entity_type === 'cycle_period' || reminder.entity_type === 'cycle_log_nudge') && reminder.entity_title) {
     body = cycleBody(reminder, locale, dateFormat);
   } else if ((reminder.entity_type === 'schedule_entry' || reminder.entity_type === 'schedule_extra_entry') && reminder.entity_title) {
@@ -290,8 +269,6 @@ function reminderPayload(reminder, locale, dateFormat) {
     body = preventionDueBody(reminder);
   } else if (reminder.entity_type === 'fasting_goal' || reminder.entity_type === 'fasting_next_start') {
     body = fastingBody(reminder, locale);
-  } else if (reminder.entity_type === 'shopping_move_returned') {
-    body = moveReturnedBody(reminder, locale);
   }
   // Waste is the one entity_type with a real per-occurrence deep link
   // (?type=<id>&date=<date_key>, the same contract every other Waste
@@ -300,9 +277,7 @@ function reminderPayload(reminder, locale, dateFormat) {
   // only if the anchor/type vanished between sync and delivery.
   const url = (reminder.entity_type === 'waste_pickup' && reminder.waste_type_id && reminder.waste_date_key)
     ? `/waste?type=${reminder.waste_type_id}&date=${reminder.waste_date_key}`
-    : (reminder.entity_type === 'shopping_move_returned' && reminder.move_notice?.back_list_id)
-      ? `/shopping?list=${reminder.move_notice.back_list_id}`
-      : (origin ? origin.url : '/');
+    : (origin ? origin.url : '/');
   return {
     // Ohne bekannte Herkunft bleibt der App-Name: er ist nichtssagend, aber nie
     // falsch - und ein roher `entity_type` im Titel waere beides. Das Ziel
@@ -461,7 +436,7 @@ export async function processDueNotifications({
   // Geburtstags-Sync darueber: idempotent, ohne Zustand, bei jedem Lauf erneut.
   // Haushaltsweit statt je Nutzer - der Vorrat gehoert dem Haushalt.
   try {
-    syncAllPantryExpiryReminders(activeDb, now);
+
   } catch (err) {
     log.error('Pantry expiry sync failed:', err?.message || err);
   }
@@ -506,7 +481,6 @@ export async function processDueNotifications({
           FROM inventory_item_dates d JOIN inventory_items ii ON ii.id = d.item_id
           WHERE d.id = r.entity_id
         )
-        WHEN 'pantry_item' THEN (SELECT name FROM pantry_items WHERE id = r.entity_id)
         WHEN 'cycle_period' THEN (SELECT anchor_date FROM cycle_reminder_anchors WHERE id = r.entity_id)
         WHEN 'cycle_log_nudge' THEN (SELECT anchor_date FROM cycle_reminder_anchors WHERE id = r.entity_id)
         WHEN 'schedule_entry' THEN (
@@ -545,8 +519,6 @@ export async function processDueNotifications({
         THEN (SELECT warranty_months FROM inventory_items WHERE id = r.entity_id) END AS inv_warranty_months,
       CASE WHEN r.entity_type = 'inventory_tracked_date'
         THEN (SELECT date FROM inventory_item_dates WHERE id = r.entity_id) END AS inv_tracked_date,
-      CASE WHEN r.entity_type = 'pantry_item'
-        THEN (SELECT expires_on FROM pantry_items WHERE id = r.entity_id) END AS pantry_expires_on,
       CASE
         WHEN r.entity_type = 'schedule_entry' THEN (
           SELECT t.start_time FROM schedule_reminder_entries e JOIN schedule_shift_types t ON t.id = e.shift_type_id
@@ -649,11 +621,9 @@ export async function processDueNotifications({
   }
 
   for (const reminder of due) {
+    if (['pantry_item', 'shopping_move_returned'].includes(reminder.entity_type)) continue;
     reminder.cycle_owner_name = cycleOwnerName(reminder);
-    if (reminder.entity_type === 'shopping_move_returned') {
-      reminder.move_notice = moveNoticeFields(activeDb, reminder.entity_id);
-      if (reminder.move_notice) reminder.entity_title = reminder.move_notice.item_name;
-    }
+
     const payload = reminderPayload(reminder, locale, dateFormat);
     // EIN KANAL DES HAUSHALTS IST EIN LESER WIE JEDER ANDERE. Er bekam jede
     // faellige Erinnerung jedes Mitglieds mit Titel - auch die an eine private

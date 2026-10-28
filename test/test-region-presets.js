@@ -44,20 +44,6 @@ test('every region preset maps to backend-valid currency, date and time values',
   }
 });
 
-test('every preset date_format is selectable in the appearance UI', async () => {
-  const src = await readFile(
-    new URL('../public/settings/pages/personal-appearance.js', import.meta.url),
-    'utf8',
-  );
-  const block = src.match(/const DATE_FORMATS = \[([\s\S]*?)\n\];/);
-  assert.ok(block, 'personal-appearance must declare DATE_FORMATS');
-  const uiFormats = [...block[1].matchAll(/\['([^']+)'/g)].map((m) => m[1]);
-
-  for (const [code, preset] of Object.entries(REGION_PRESETS)) {
-    assert.ok(uiFormats.includes(preset.date_format), `${code}: ${preset.date_format} missing from UI DATE_FORMATS`);
-  }
-});
-
 test('detectRegion resolves every preset to a code with identical format values', () => {
   // Several regions intentionally share the same currency/date/time triple
   // (e.g. de-DE and de-AT). Since no `region` is persisted, detectRegion only

@@ -170,12 +170,6 @@ export const CASE_MESSAGES = new Map([
   ['documents_file_content_mismatch', 'documents.errorFileContentMismatch'],
   ['documents_file_empty', 'documents.errorFileEmpty'],
   ['documents_storage_failed', 'documents.errorStorageFailed'],
-  // Ein DMS verknuepfen oder dorthin senden (server/routes/dms.js).
-  ['dms_account_not_found', 'documents.errorDmsAccountGone'],
-  ['dms_document_not_found', 'documents.errorDmsDocumentGone'],
-  ['dms_document_already_linked', 'documents.errorDmsAlreadyLinked'],
-  ['dms_document_already_stored', 'documents.errorDmsAlreadyStored'],
-  ['dms_unreachable', 'documents.dmsSearchError'],
   // Rezepte (#1909). Alle drei stehen auch in GONE_REASONS. Rezepte haben
   // keine Sichtbarkeit: die 404 heisst "geloescht" - von einem anderen
   // Haushaltsmitglied oder vom Abgleich mit einer Rezeptquelle. Ein Loeschen
@@ -483,8 +477,6 @@ export const GONE_REASONS = new Set([
   'documents_folder_not_found',
   'documents_selected_folder_not_found',
   'documents_document_not_found',
-  'dms_account_not_found',
-  'dms_document_not_found',
   'recipes_recipe_not_found',
   'recipes_ingredient_not_found',
   'recipes_selected_pantry_item_not_found',

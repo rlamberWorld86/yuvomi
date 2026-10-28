@@ -31,7 +31,7 @@ export const ORIGIN_MODULE = Object.freeze({
   subscription:           'budget',
   inventory_item:         'inventory',
   inventory_tracked_date: 'inventory',
-  pantry_item:            'pantry',
+
   cycle_period:           'health',
   cycle_log_nudge:        'health',
   health_prevention_due:  'health',
@@ -41,7 +41,7 @@ export const ORIGIN_MODULE = Object.freeze({
   document_expiry:        'documents',
   fasting_goal:           'health',
   fasting_next_start:     'health',
-  shopping_move_returned: 'shopping',
+
 });
 
 /**

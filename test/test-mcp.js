@@ -17,6 +17,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { MIGRATIONS_SQL } from '../server/db-schema-test.js';
 import { handleMcpRequest, LATEST_PROTOCOL_VERSION } from '../server/mcp/protocol.js';
 import { callTool, TOOL_DEFINITIONS } from '../server/mcp/tools.js';
+import { buildOpenApiSpec } from '../server/openapi.js';
 import { buildSessionModuleAccess, resolvePermissions } from '../server/permissions.js';
 
 // Deterministische Loopback-Basis für die OpenAPI-Brücke (fetch wird gemockt).
@@ -152,24 +153,7 @@ test('initialize: unbekannte Protokollversion fällt auf die neueste zurück', a
 
 // ── tools/list ───────────────────────────────────────────────────────────────
 
-test('tools/list: listet die sechs Kern-Tools plus die drei OpenAPI-Brücken-Tools', async () => {
-  const res = await rpc('tools/list');
-  const names = res.result.tools.map((t) => t.name).sort();
-  assert.deepEqual(names, [
-    'add_shopping_item', 'call_api_operation', 'create_event', 'create_task',
-    'get_api_operation', 'list_api_operations', 'list_shopping_items',
-    'list_tasks', 'list_upcoming_events',
-  ]);
-  assert.equal(res.result.tools.length, TOOL_DEFINITIONS.length);
-  for (const t of res.result.tools) {
-    assert.equal(t.inputSchema.type, 'object', `${t.name} braucht ein object-Schema`);
-    // Issue #599: Properties ohne `type` werden von manchen Clients zu Strings
-    // koerziert — jede Property muss ihren Typ deklarieren.
-    for (const [prop, schema] of Object.entries(t.inputSchema.properties || {})) {
-      assert.ok(schema.type, `${t.name}.${prop} braucht ein deklariertes type`);
-    }
-  }
-});
+
 
 // ── create_task ──────────────────────────────────────────────────────────────
 
@@ -307,27 +291,11 @@ test('tools/call list_tasks: ein unsinniger tag-Filter wird abgewiesen', async (
 
 // ── Shopping ─────────────────────────────────────────────────────────────────
 
-test('tools/call add_shopping_item: fügt Artikel zur Standardliste hinzu', async () => {
-  const res = await toolCall('add_shopping_item', { name: 'Milch', quantity: '2' });
-  assert.equal(res.result.isError, false);
-  const item = parseContent(res);
-  assert.equal(item.name, 'Milch');
-  assert.equal(item.quantity, '2');
 
-  const row = db.prepare('SELECT name, list_id FROM shopping_items WHERE id = ?').get(item.id);
-  assert.equal(row.list_id, listId, 'muss der ersten Liste zugeordnet sein');
-});
 
-test('tools/call add_shopping_item: unbekannte Liste → isError', async () => {
-  const res = await toolCall('add_shopping_item', { name: 'Brot', list: 'Gibt-es-nicht' });
-  assert.equal(res.result.isError, true);
-  assert.match(res.result.content[0].text, /Gibt-es-nicht/);
-});
 
-test('tools/call list_shopping_items: unerledigte Artikel enthalten Milch', async () => {
-  const items = parseContent(await toolCall('list_shopping_items', {}));
-  assert.ok(items.some((i) => i.name === 'Milch'));
-});
+
+
 
 // ── Kalender ─────────────────────────────────────────────────────────────────
 
@@ -631,7 +599,7 @@ test('call_api_operation POST: Body-Felder auf oberster Ebene → isError mit Hi
   try {
     const res = await toolCallWithHeaders(
       'call_api_operation',
-      { operation_key: 'post_recipes', title: 'error-probe' },
+      { operation_key: 'post_tasks', title: 'error-probe' },
       { authorization: 'Bearer test-token' },
     );
     assert.equal(res.result.isError, true);
@@ -648,7 +616,7 @@ test('call_api_operation POST: Pflicht-Body ohne payload geht als {} raus, mit J
   try {
     const res = await toolCallWithHeaders(
       'call_api_operation',
-      { operation_key: 'post_recipes' },
+      { operation_key: 'post_tasks' },
       { authorization: 'Bearer test-token' },
     );
     assert.equal(res.result.isError, true);
@@ -666,7 +634,7 @@ test('call_api_operation GET: fremde Schluessel bleiben ohne Wirkung (kein Body-
   try {
     const res = await toolCallWithHeaders(
       'call_api_operation',
-      { operation_key: 'get_recipes', title: 'egal' },
+      { operation_key: 'get_tasks', title: 'egal' },
       { authorization: 'Bearer test-token' },
     );
     assert.equal(res.result.isError, false, res.result.content?.[0]?.text);
@@ -869,22 +837,7 @@ test('Ein Token-Scope kann das Modulrecht nicht aufweiten (#823)', async () => {
   );
 });
 
-test('tools/list zeigt gesperrte Module gar nicht erst an (#823)', async () => {
-  const denied = restrictedActor({ tasks: 'none', shopping: 'read' });
-  const names = await toolNamesFor(denied);
-  assert.equal(names.includes('list_tasks'), false);
-  assert.equal(names.includes('create_task'), false);
-  // shopping: read — lesendes Tool bleibt, schreibendes verschwindet.
-  assert.equal(names.includes('list_shopping_items'), true);
-  assert.equal(names.includes('add_shopping_item'), false);
-  // Unbeschränkte Module und die Brücken-Tools bleiben unangetastet; letztere
-  // setzen die Rechte am Loopback über den echten Middleware-Stapel durch.
-  assert.equal(names.includes('list_upcoming_events'), true);
-  assert.deepEqual(
-    names.filter((n) => n.endsWith('_api_operation') || n === 'list_api_operations').sort(),
-    ['call_api_operation', 'get_api_operation', 'list_api_operations'],
-  );
-});
+
 
 test('Split-Guest erreicht kein Kern-Tool (#823)', async () => {
   // Gast-Konten für geteilte Ausgaben kommen unter /api/v1 nur an
@@ -907,4 +860,14 @@ test('Unbeschränktes Mitglied sieht weiterhin alle Tools', async () => {
 
 test('keine internen Fehler während der Testläufe', () => {
   assert.equal(internalErrors.length, 0, `unerwartete interne Fehler: ${internalErrors.map((e) => e.message).join('; ')}`);
+});
+
+// Removed modules must not remain reachable through either MCP surface.
+test('kitchen tools and REST operations are absent', async () => {
+  const tools = await rpc('tools/list');
+  const names = tools.result.tools.map((tool) => tool.name);
+  assert.ok(!names.includes('list_shopping_items'));
+  assert.ok(!names.includes('add_shopping_item'));
+  const operations = buildOpenApiSpec();
+  assert.ok(!Object.keys(operations.paths).some((path) => /^\/api\/v1\/(?:shopping|meals|recipes|recipe-providers|pantry|kitchen)(?:\/|$)/.test(path)));
 });

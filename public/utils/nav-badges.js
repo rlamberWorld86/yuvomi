@@ -189,14 +189,13 @@ export function resetNavBadges() {
  * damit ein Test sie beantworten kann, statt eine halbe Shell nachzubauen.
  *
  * @param {object} data - die `/dashboard`-Antwort.
- * @param {{isAdmin?: boolean, shoppingVisible?: boolean}} viewer
+ * @param {{isAdmin?: boolean}} viewer
  */
-export function moduleCountsFrom(data, { isAdmin = false, shoppingVisible = false } = {}) {
+export function moduleCountsFrom(data, { isAdmin = false } = {}) {
   const openDoses = Math.max(0, (data?.health?.dosesTotal ?? 0)
     - (data?.health?.dosesTaken ?? 0) - (data?.health?.dosesSkipped ?? 0));
   const counts = {
     tasks: data?.openTaskCount ?? 0,
-    shopping: data?.shoppingOpenCount ?? 0,
     /* NUR FUER ELTERN. `rewards.pending` zaehlt serverseitig JEDE offene Anfrage
      * des Haushalts, waehrend die Belohnungsseite einem Nicht-Admin nur die
      * EIGENEN zeigt: hat ein Geschwister eine offene Anfrage und man selbst
@@ -206,18 +205,6 @@ export function moduleCountsFrom(data, { isAdmin = false, shoppingVisible = fals
     rewards: isAdmin ? (Number(data?.rewards?.pending) || 0) + (Number(data?.rewards?.moneyPending) || 0) : 0,
     health: openDoses,
   };
-  /* Die Küche ist im mobilen Menü EIN Ziel für vier Module; was dort wartet,
-   * ist der Einkaufszettel.
-   *
-   * NUR WENN DER EINKAUF DIESEM MITGLIED AUCH OFFENSTEHT. Die Kachel ist die
-   * einzige, die einen FREMDEN Modulzähler tragen kann - die anderen erscheinen
-   * gar nicht erst, wenn ihr Modul fehlt, diese hier bleibt stehen, solange
-   * eines der vier da ist. Der Server zählt `shoppingOpenCount` ungefiltert über
-   * den ganzen Haushalt (`routes/dashboard.js`) - auch wenn die Einkaufs-Kachel
-   * eine Listen-Auswahl trägt: die füllt nur `shoppingTile` (#1818) -, also warb die Kachel mit
-   * Arbeit in einem Modul, das sich nicht öffnen lässt, und führte beim Antippen
-   * nach Mahlzeiten (Codex-Review zu PR #754). */
-  counts.kitchen = shoppingVisible ? counts.shopping : 0;
   return counts;
 }
 

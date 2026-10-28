@@ -28,7 +28,7 @@ process.env.SESSION_SECRET = 'task-tags-test-secret';
 
 const { MIGRATIONS, get, _setTestDatabase } = await import('../server/db.js');
 const { default: tasksRouter } = await import('../server/routes/tasks.js');
-const { normalizeTags, tagsKey, setTags, loadTags, allTags, setItemTags, loadItemTags,
+const { normalizeTags, tagsKey, setTags, loadTags, allTags,
   MAX_TAGS, MAX_TAG_LEN } = await import('../server/utils/task-tags.js');
 const { runSearch } = await import('../server/services/search.js');
 
@@ -758,40 +758,9 @@ test('eine gelöschte Aufgabe hinterlässt keine Karteileiche im Index', () => {
 
 // ── Einkaufsposten ─────────────────────────────────────────────────────────────
 
-test('Einkaufsposten tragen dieselbe Tag-Achse und sind darüber auffindbar', () => {
-  // Eine CalDAV-Erinnerungsliste kann auf Aufgaben ODER auf den Einkauf zeigen
-  // (#617). Bis hierher fielen die CATEGORIES eines Einkaufspostens weg.
-  const marker = `einkauf${randomUUID().slice(0, 6)}`;
-  const listId = get().prepare(
-    'INSERT INTO shopping_lists (name, created_by) VALUES (?, ?)'
-  ).run(`Liste-${randomUUID()}`, ALICE).lastInsertRowid;
-  const itemId = get().prepare(
-    'INSERT INTO shopping_items (list_id, name) VALUES (?, ?)'
-  ).run(listId, 'Milch').lastInsertRowid;
 
-  setItemTags(get(), itemId, ['Bio', marker]);
-  assert.deepEqual(loadItemTags(get(), itemId), ['Bio', marker]);
-  assert.deepEqual(runSearch(get(), marker, ALICE).items.map((i) => i.id), [itemId]);
 
-  get().prepare('DELETE FROM shopping_items WHERE id = ?').run(itemId);
-  assert.equal(runSearch(get(), marker, ALICE).items.length, 0, 'CASCADE räumt auch den Index');
-});
 
-test('die Kategorie eines Einkaufspostens bleibt von den Tags unberührt', () => {
-  // Die Kategorie ist hier der Gang im Laden - eine verwaltete Liste. Fremde
-  // CATEGORIES hineinzuspülen liesse sie bei jedem Sync wachsen.
-  const listId = get().prepare(
-    'INSERT INTO shopping_lists (name, created_by) VALUES (?, ?)'
-  ).run(`Liste-${randomUUID()}`, ALICE).lastInsertRowid;
-  const itemId = get().prepare(
-    'INSERT INTO shopping_items (list_id, name) VALUES (?, ?)'
-  ).run(listId, 'Äpfel').lastInsertRowid;
-  const before = get().prepare('SELECT category FROM shopping_items WHERE id = ?').get(itemId).category;
-
-  setItemTags(get(), itemId, ['Obst & Gemüse', 'Bio']);
-
-  assert.equal(get().prepare('SELECT category FROM shopping_items WHERE id = ?').get(itemId).category, before);
-});
 
 // ── Unteraufgaben ──────────────────────────────────────────────────────────────
 

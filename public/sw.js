@@ -37,9 +37,9 @@ const ALL_CACHES    = [SHELL_CACHE, PAGES_CACHE, LOCALES_CACHE, ASSETS_CACHE];
 // `/people` sind die Profilbilder (server/routes/people.js): Aufgaben, Termine
 // und Uebersicht tragen ihre Adresse statt der Data-URL, offline braucht die
 // Zeile ihr Bild aus demselben Cache.
-const API_CACHE_WHITELIST = ['/calendar', '/tasks', '/shopping', '/contacts', '/dashboard', '/people'];
+const API_CACHE_WHITELIST = ['/calendar', '/tasks', '/contacts', '/dashboard', '/people'];
 // Pfade UNTER einem Whitelist-Prefix, die trotzdem nie gecacht werden.
-const API_CACHE_EXCLUDE = ['/shopping/versions'];
+const API_CACHE_EXCLUDE = [];
 
 // App-Shell: sofort benötigt für ersten Render
 const APP_SHELL = [
@@ -68,7 +68,6 @@ const APP_SHELL = [
   '/styles/filter-chip.css',
   '/styles/sub-tabs.css',
   '/styles/page-search.css',
-  '/styles/kitchen-tabs.css',
   '/styles/list-row.css',
   '/styles/panel.css',
   '/styles/user-multi-select.css',
@@ -80,8 +79,6 @@ const APP_SHELL = [
   '/styles/reminders.css',
   '/styles/dashboard.css',
   '/styles/tasks.css',
-  '/styles/shopping.css',
-  '/styles/meals.css',
   '/styles/calendar.css',
   '/styles/time-grid.css',
   '/styles/markdown-toolbar.css',
@@ -90,8 +87,6 @@ const APP_SHELL = [
   '/styles/birthdays.css',
   '/styles/documents.css',
   '/styles/settings.css',
-  '/styles/recipes.css',
-  '/styles/pantry.css',
   '/styles/detail-view.css',
   '/components/yuvomi-install-prompt.js',
   // Geteilte Module. Sie werden von Shell UND Seitenmodulen importiert und
@@ -153,18 +148,11 @@ const APP_SHELL = [
   '/utils/form-row.js',
   '/utils/friendly-error.js',
   '/utils/health-cycle.js',
-  '/components/fasting-help.js',
-  '/utils/help.js',
   '/utils/household-zone-hint.js',
-  '/utils/first-steps.js',
   '/utils/household.js',
   '/utils/html-escape.js',
   '/utils/html.js',
-  '/utils/ingredient-match-key.js',
-  '/utils/ingredient-row.js',
   '/utils/initials.js',
-  '/utils/kitchen-tabs.js',
-  '/utils/kitchen-transfer.js',
   '/utils/korean-particles.js',
   '/utils/leave-guard.js',
   '/utils/live-feed.js',
@@ -173,7 +161,6 @@ const APP_SHELL = [
   '/utils/markdown-checklist.js',
   '/utils/markdown-toolbar.js',
   '/utils/master-detail.js',
-  '/utils/meal-types.js',
   '/utils/member-order.js',
   '/utils/mentions.js',
   '/utils/module-accent.js',
@@ -196,9 +183,6 @@ const APP_SHELL = [
   '/utils/search-sections.js',
   '/utils/palette-combobox.js',
   '/utils/period-stepper.js',
-  '/utils/pantry-locations.js',
-  '/utils/pantry-status.js',
-  '/utils/pantry-units.js',
   '/utils/people-picker.js',
   '/utils/period-swipe.js',
   '/utils/permission-group.js',
@@ -206,10 +190,7 @@ const APP_SHELL = [
   '/utils/popover-menu.js',
   '/utils/quick-link-url.js',
   '/utils/pwa-install.js',
-  '/utils/recipe-meal-types.js',
   '/utils/read-row.js',
-  '/utils/recipe-thumb.js',
-  '/utils/recipe-to-meal.js',
   '/utils/recurrence-scope.js',
   '/utils/reminder-offset.js',
   '/utils/router-navigate.js',
@@ -221,7 +202,6 @@ const APP_SHELL = [
   '/utils/session-unreachable.js',
   '/utils/segment-indicator.js',
   '/utils/sheet-drag.js',
-  '/utils/shopping-categories.js',
   '/utils/skeleton.js',
   '/utils/start-handoff.js',
   '/utils/sub-tabs.js',
@@ -243,7 +223,6 @@ const APP_SHELL = [
   '/utils/ux.js',
   '/utils/vcard.js',
   '/utils/view-transition.js',
-  '/utils/version.js',
   '/utils/upload-limit.js',
   '/utils/web-share.js',
   '/utils/week-strip.js',
@@ -319,8 +298,6 @@ const PRECACHED_LOCALES = ['/locales/de.json'];
 const PAGE_MODULES = [
   '/pages/dashboard.js',
   '/pages/tasks.js',
-  '/pages/shopping.js',
-  '/pages/meals.js',
   '/pages/calendar.js',
   '/pages/notes.js',
   '/pages/contacts.js',
@@ -329,8 +306,6 @@ const PAGE_MODULES = [
   '/pages/settings.js',
   '/pages/login.js',
   '/pages/pair-display.js',
-  '/pages/recipes.js',
-  '/pages/pantry.js',
   '/components/category-manager.js',
   '/components/icon-picker.js',
   '/components/tag-manager.js',
@@ -364,13 +339,11 @@ const PAGE_MODULES = [
   '/settings/pages/admin-permissions.js',
   '/settings/pages/personal-calendar-subscriptions.js',
   '/settings/pages/personal-feeds.js',
-  '/settings/pages/personal-appearance.js',
   '/settings/pages/personal-device.js',
   '/settings/pages/personal-calendar.js',
   '/settings/pages/personal-tasks.js',
   '/settings/pages/modules-active.js',
   '/settings/pages/modules-navigation.js',
-  '/settings/pages/modules-kitchen.js',
   '/settings/pages/modules-calendar.js',
   '/settings/pages/modules-options.js',
   '/settings/pages/modules-countdowns.js',
@@ -379,7 +352,6 @@ const PAGE_MODULES = [
   '/settings/pages/sync-reminders.js',
   '/settings/pages/notifications.js',
   '/settings/pages/documents-storage.js',
-  '/settings/pages/documents-dms.js',
   '/settings/pages/admin-family.js',
   '/settings/pages/admin-system.js',
 ];

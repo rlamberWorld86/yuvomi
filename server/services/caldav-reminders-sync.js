@@ -1,12 +1,4 @@
-/**
- * Modul: CalDAV Reminders Sync (Apple Reminders / VTODO)
- * Zweck: Multi-Account-CalDAV-VTODO-Synchronisation in die Module Tasks & Shopping.
- *        Reuses the existing caldav_accounts; Apple Reminders lists are CalDAV collections
- *        whose supported components include VTODO.
- *        Die Rückrichtung (lokale Änderung/Löschung → Server, #617) liegt in
- *        caldav-todo-outbound.js und läuft am Ende jedes Account-Durchlaufs mit.
- * Abhängigkeiten: tsdav, server/db.js, server/services/ics-parser.js
- */
+
 
 import { createLogger } from '../logger.js';
 const log = createLogger('CalDAV-Reminders');
@@ -15,7 +7,7 @@ import * as db from '../db.js';
 import { parseVTODO } from './ics-parser.js';
 import { createCalDAVClient, supportsComponent } from '../utils/caldav-client.js';
 import { householdTimeZone, utcToWall } from '../utils/timezone.js';
-import { setItemTags, setTags } from '../utils/task-tags.js';
+import { setTags } from '../utils/task-tags.js';
 import { syncTaskCompletion, recordCompletion, revokeCompletion } from './task-completions.js';
 import * as todoOutbound from './caldav-todo-outbound.js';
 import { createRefusalStop } from './calendar-outbound.js';
@@ -187,20 +179,6 @@ async function getReminderLists(accountId, { refresh = false, createClient: make
   return result;
 }
 
-function ensureShoppingList(sel) {
-  if (sel.target_list_id) {
-    const existing = db.get().prepare('SELECT id FROM shopping_lists WHERE id = ?').get(sel.target_list_id);
-    if (existing) return sel.target_list_id;
-  }
-  const owner     = db.get().prepare('SELECT id FROM users ORDER BY id ASC LIMIT 1').get();
-  const createdBy = owner ? owner.id : 1;
-  const row       = db.get().prepare('INSERT INTO shopping_lists (name, created_by) VALUES (?, ?)').run(sel.list_name, createdBy);
-  const id        = row.lastInsertRowid;
-  db.get().prepare('UPDATE caldav_reminder_selection SET target_list_id = ? WHERE id = ?').run(id, sel.id);
-  sel.target_list_id = id;
-  return id;
-}
-
 function updateReminderSelection(accountId, listUrl, { enabled, targetModule } = {}) {
   const account = getAccountById(accountId);
   if (!account) {
@@ -215,15 +193,13 @@ function updateReminderSelection(accountId, listUrl, { enabled, targetModule } =
   }
 
   const newModule = targetModule || sel.target_module;
-  if (newModule !== 'tasks' && newModule !== 'shopping') {
-    throw new Error('Invalid target module (expected "tasks" or "shopping").');
+  if (newModule !== 'tasks') {
+    throw new Error('Invalid target module (expected "tasks").');
   }
   const newEnabled = enabled === undefined ? sel.enabled : (enabled ? 1 : 0);
 
   let targetListId = sel.target_list_id;
-  if (newModule === 'shopping' && newEnabled === 1) {
-    targetListId = ensureShoppingList(sel);
-  }
+
 
   db.get().prepare(`
     UPDATE caldav_reminder_selection
@@ -451,77 +427,11 @@ function applyTaskRelations(seen) {
   return changed;
 }
 
-function upsertShoppingItem(sel, todo, accountId, objectUrl = null) {
-  const listId    = ensureShoppingList(sel);
-  const isChecked = todo.completed ? 1 : 0;
-
-  const existing = db.get().prepare(
-    `SELECT id, outbound_move FROM shopping_items WHERE external_uid = ? AND external_source = 'caldav' AND external_account_id = ?`
-  ).get(todo.uid, accountId);
-
-  // DER ARTIKEL IST HIER UMGEZOGEN, SEIN OBJEKT NOCH NICHT (#1700). Der Abruf
-  // liest es am alten Platz und stellte die Zeile sonst dorthin zurück - der
-  // Server folgt hier der Zeile, nicht umgekehrt. Frisch an der Zeile gelesen,
-  // nicht aus dem Stand vom Anfang des Laufs: der Umzug kann eintreffen,
-  // während der Lauf noch den Server liest. Nur eine fehlende Adresse wird
-  // nachgetragen, ohne sie ist das Original nicht lesbar.
-  if (existing?.outbound_move) {
-    if (objectUrl) {
-      db.get().prepare(
-        'UPDATE shopping_items SET external_object_url = COALESCE(external_object_url, ?) WHERE id = ?'
-      ).run(objectUrl, existing.id);
-    }
-    return;
-  }
-
-  let itemId;
-  if (existing) {
-    db.get().prepare(`
-      UPDATE shopping_items
-      SET name = ?, is_checked = ?, list_id = ?, external_object_url = COALESCE(?, external_object_url)
-      WHERE id = ?
-    `).run(todo.summary, isChecked, listId, objectUrl, existing.id);
-    itemId = existing.id;
-  } else {
-    // category bleibt beim Spalten-Default - die Kategorie ist hier der Gang im
-    // Laden, eine verwaltete Liste. CATEGORIES landet in den Tags.
-    const row = db.get().prepare(`
-      INSERT INTO shopping_items
-        (list_id, name, is_checked, external_uid, external_source, external_account_id, external_object_url)
-      VALUES (?, ?, ?, ?, 'caldav', ?, ?)
-    `).run(listId, todo.summary, isChecked, todo.uid, accountId, objectUrl);
-    itemId = row.lastInsertRowid;
-  }
-
-  // CATEGORIES → Tags (#586). Anders als bei Aufgaben ist das eine Einbahn-
-  // straße: der Einkauf zeigt die Etiketten der Quellliste, verwaltet sie aber
-  // nicht. Entsprechend nimmt icsFieldsForShoppingItem CATEGORIES nicht auf -
-  // ein Push darf die Werte des Servers nicht anfassen.
-  setItemTags(db.get(), itemId, todo.tags);
-}
-
 // Nur diese Tabellen dürfen geprunt werden. `table` wird interpoliert (SQLite
 // erlaubt keine Bind-Parameter für Bezeichner), deshalb die harte Whitelist.
-const PRUNABLE_TABLES = new Set(['tasks', 'shopping_items']);
+const PRUNABLE_TABLES = new Set(['tasks']);
 
-/**
- * Entfernt lokal die gespiegelten VTODO-Einträge, die der Server nicht mehr liefert.
- *
- * Leer-Guard (#508): eine leere UID-Liste bedeutet **nicht** "alles löschen". Ein
- * leeres Ergebnis ist weit häufiger ein stiller Server- oder Auth-Fehler als eine
- * tatsächlich geleerte Liste, und der Preis für die falsche Annahme wäre der
- * Totalverlust aller gespiegelten Aufgaben des Accounts — samt Unteraufgaben,
- * Zuweisungen und Dokument-Verknüpfungen, die per CASCADE mitgehen. Der Preis für
- * den Guard: eine wirklich geleerte Liste behält ihre lokalen Einträge, bis sie von
- * Hand entfernt werden.
- *
- * Der Aufrufer muss zusätzlich sicherstellen, dass **jede** Liste dieses Moduls
- * erfolgreich abgerufen wurde: `tasks`/`shopping_items` tragen nur die Account-ID,
- * nicht die Listen-URL, also lässt sich ein Prune nicht auf eine einzelne Liste
- * eingrenzen.
- *
- * @returns {number} Anzahl gelöschter Einträge.
- */
+
 export function pruneRemoved(database, table, accountId, seenUids) {
   if (!PRUNABLE_TABLES.has(table)) {
     throw new Error(`pruneRemoved: refusing to prune unknown table "${table}".`);
@@ -607,7 +517,7 @@ async function runSync({ createClient: makeClient } = {}) {
   for (const account of accounts) {
     try {
       const enabledLists = db.get().prepare(`
-        SELECT * FROM caldav_reminder_selection WHERE account_id = ? AND enabled = 1
+        SELECT * FROM caldav_reminder_selection WHERE account_id = ? AND enabled = 1 AND target_module = 'tasks'
       `).all(account.id);
 
       // Ohne eingeschaltete Liste gibt es nichts abzurufen. Wartet aber ein
@@ -615,9 +525,7 @@ async function runSync({ createClient: makeClient } = {}) {
       // Auflistung ab: nur sie sagt, ob es die Liste noch gibt.
       // Dasselbe für einen Umzug in eine abgewählte Liste (#1700) und für einen
       // Umzug AUS einer Liste dieses Kontos (#1911): sein Warten endet hier.
-      const waitsForSelection = todoOutbound.deletionsWaitingForSelection(account.id).length > 0
-        || todoOutbound.movesWaitingForSelection(account.id) > 0
-        || todoOutbound.movesFromAccount(account.id) > 0;
+      const waitsForSelection = todoOutbound.deletionsWaitingForSelection(account.id).length > 0;
       if (enabledLists.length === 0 && !waitsForSelection) continue;
 
       // Gezielte Anfragen nur an den Server dieses Kontos (`createTodoClient`).
@@ -628,12 +536,12 @@ async function runSync({ createClient: makeClient } = {}) {
         // Eine leere Auflistung sagt auch hier nichts.
         if (serverCals.length > 0) {
           todoOutbound.dropDeletionsOfMissingLists(account.id, serverCals.map((c) => c.url));
-          todoOutbound.returnMovesIntoMissingLists(account.id, serverCals.map((c) => c.url));
+
         }
         // Umzüge aus den Listen dieses Kontos (#1911): auch ohne eingeschaltete
         // Liste fällt ein Umzug ohne Ziel, und ein wartender bekommt sein Ende.
-        todoOutbound.releaseStrandedShoppingMoves(account.id);
-        todoOutbound.endWaitingShoppingMoves(account.id, serverCals.map((c) => c.url));
+
+
         reportWaitingDeletions(account);
         continue;
       }
@@ -653,24 +561,24 @@ async function runSync({ createClient: makeClient } = {}) {
       // Ziel erreicht (#1884). Vor dem Lesen der Aufträge für den Abruf unten.
       todoOutbound.dropDeletionsOfMissingLists(account.id, serverCals.map((c) => c.url));
       // Ein Umzug in eine Liste, die der Server nicht mehr nennt, geht zurück (#1700).
-      todoOutbound.returnMovesIntoMissingLists(account.id, serverCals.map((c) => c.url));
+
       // Ein Umzug aus einer Liste, die der Server nicht mehr nennt oder die zu
       // lange abgeschaltet ist, bekommt sein Ende (#1911).
-      todoOutbound.endWaitingShoppingMoves(account.id, serverCals.map((c) => c.url));
+
 
       const owner       = db.get().prepare('SELECT id FROM users ORDER BY id ASC LIMIT 1').get();
       const createdBy   = owner ? owner.id : 1;
 
-      const seenByModule = { tasks: [], shopping: [] };
+      const seenByModule = { tasks: [] };
       // #508: Module, bei denen mindestens eine Liste nicht abgerufen werden konnte,
-      // dürfen nicht geprunt werden. tasks/shopping_items tragen nur die Account-ID,
+
       // nicht die Listen-URL — ein Prune träfe sonst auch die Einträge der Liste, die
       // gerade nur wegen eines Server-Fehlers leer aussieht.
       const incompleteModules = new Set();
 
       // Ein Umzug, dessen Zielliste gar keinen Platz auf einem Server mehr hat
       // (#1700), wird zum Löschen am Server - vor dem Lesen der Aufträge.
-      todoOutbound.releaseStrandedShoppingMoves(account.id);
+
 
       // Ausstehende Rückrichtung einmal je Lauf und Modul (#617): eine lokal
       // gelöschte Aufgabe darf der Inbound nicht wieder anlegen, eine lokal
@@ -680,14 +588,11 @@ async function runSync({ createClient: makeClient } = {}) {
           deleted: todoOutbound.pendingDeletionUids(account.id, 'tasks'),
           dirty:   todoOutbound.pendingUpdateUids(account.id, 'tasks'),
         },
-        shopping: {
-          deleted: todoOutbound.pendingDeletionUids(account.id, 'shopping'),
-          dirty:   todoOutbound.pendingUpdateUids(account.id, 'shopping'),
-        },
+
       };
       // UID → Kalenderobjekt dieses Laufs. Ausgehende Löschungen brauchen dessen
       // URL, Änderungen zusätzlich seinen Originalinhalt zum Patchen.
-      const objectsByModule = { tasks: new Map(), shopping: new Map() };
+      const objectsByModule = { tasks: new Map() };
       // UID → lokale Aufgabe dieses Laufs, für die Hierarchie-Auflösung nach
       // allen Listen (#671). Nur Aufgaben: der Einkauf kennt keine Unterposten.
       const taskRelations = new Map();
@@ -696,7 +601,7 @@ async function runSync({ createClient: makeClient } = {}) {
       const completionTransitions = new Map();
 
       for (const sel of enabledLists) {
-        const module = sel.target_module === 'shopping' ? 'shopping' : 'tasks';
+        const module = 'tasks';
         const serverCal = serverCals.find(c => c.url === sel.list_url);
         if (!serverCal) {
           log.warn(`Reminder list ${sel.list_url} not found on server, disabling.`);
@@ -750,9 +655,7 @@ async function runSync({ createClient: makeClient } = {}) {
               // ist dieses Objekt das letzte, und die Zeile geht nach dem
               // Prune zu ihm zurück (`confirmCarriedCopy`).
               if (unbooked && !adoptOwn()) {
-                if (todoOutbound.leftoverHoldsCarriedItem(todo.uid, sel.list_url)) {
-                  seenByModule.shopping.push(todo.uid);
-                }
+
                 continue;
               }
 
@@ -783,9 +686,7 @@ async function runSync({ createClient: makeClient } = {}) {
                 continue;
               }
 
-              if (module === 'shopping') {
-                upsertShoppingItem(sel, todo, account.id, obj.url || null);
-              } else {
+              {
                 const taskId = upsertTask(todo, account.id, createdBy, obj.url || null, { completions: completionTransitions });
                 taskRelations.set(todo.uid, {
                   taskId,
@@ -826,40 +727,13 @@ async function runSync({ createClient: makeClient } = {}) {
       // Prune locally-stored caldav items that vanished remotely.
       // Module mit einer nicht abgerufenen Liste werden übersprungen (#508).
       const hasTasks    = enabledLists.some(s => s.target_module === 'tasks');
-      const hasShopping = enabledLists.some(s => s.target_module === 'shopping');
+
 
       if (hasTasks) {
         if (incompleteModules.has('tasks')) {
           log.warn(`Account ${account.id}: a reminder list could not be fetched, skipping task deletion.`);
         } else {
           pruneRemoved(db.get(), 'tasks', account.id, seenByModule.tasks);
-        }
-      }
-
-      if (hasShopping) {
-        if (incompleteModules.has('shopping')) {
-          log.warn(`Account ${account.id}: a reminder list could not be fetched, skipping shopping deletion.`);
-        } else {
-          // Ein wartender Umzug, dessen Objekt in einer nicht abgerufenen
-          // Liste liegt (#1700), ist nicht "auf dem Server gelöscht".
-          //
-          // NUR ZUSÄTZLICH zu dem, was der Server geliefert hat. Hat er nichts
-          // geliefert, bleibt die Liste leer und der Leer-Guard von
-          // `pruneRemoved` (#508) greift: eine einzige hier ergänzte UID
-          // machte sonst aus "nichts gesehen" ein "alles andere ist fort", und
-          // der Prune räumte jeden Einkaufsartikel des Kontos ab.
-          // Scheitert das Lesen der wartenden Umzüge, geht der Fehler hoch und
-          // dieser Lauf prunt gar nicht - es gibt hier keinen leeren Ersatzwert.
-          // Gelesen heisst: als Einkaufsliste gelesen. Eine inzwischen den
-          // Aufgaben zugeordnete Quelle liefert ihre UID nur an die Aufgaben
-          // (#1911), für den Einkauf bleibt sie ungelesen.
-          const shielded = seenByModule.shopping.length
-            ? todoOutbound.uidsOfMovesFromUnfetchedLists(
-              account.id,
-              enabledLists.filter((s) => s.target_module === 'shopping').map((s) => s.list_url),
-            )
-            : [];
-          pruneRemoved(db.get(), 'shopping_items', account.id, [...seenByModule.shopping, ...shielded]);
         }
       }
 
@@ -872,7 +746,7 @@ async function runSync({ createClient: makeClient } = {}) {
       // unerreichbar - dieselbe Vorsicht wie beim Prune (#508).
       // Ein Stoppsignal für Löschen und Ändern aller Module dieses Kontos (#1863).
       const stop = createRefusalStop();
-      for (const module of ['tasks', 'shopping']) {
+      for (const module of ['tasks']) {
         const complete = !incompleteModules.has(module);
         try {
           const removed = await todoOutbound.processPendingDeletions(
@@ -909,7 +783,7 @@ async function runSync({ createClient: makeClient } = {}) {
       try {
         const taskLists = new Map(
           enabledLists
-            .filter((s) => s.target_module !== 'shopping')
+            .filter((s) => s.target_module === 'tasks')
             .map((s) => [s.list_url, serverCals.find((c) => c.url === s.list_url)])
             .filter(([, cal]) => cal)
         );
@@ -925,48 +799,12 @@ async function runSync({ createClient: makeClient } = {}) {
       // Dasselbe für den Einkauf (#831). Ein Artikel trägt kein eigenes Ziel -
       // die Zuordnung Server-Liste ↔ Yuvomi-Liste ist die Zielangabe, also
       // reicht sie hier hinein.
-      try {
-        const shoppingSelections = enabledLists.filter((s) => s.target_module === 'shopping');
-        const shoppingLists = new Map(
-          shoppingSelections
-            .map((s) => [s.list_url, serverCals.find((c) => c.url === s.list_url)])
-            .filter(([, cal]) => cal)
-        );
-        const created = await todoOutbound.processPendingShoppingCreations(
-          client,
-          account.id,
-          shoppingSelections.map((s) => ({ listUrl: s.list_url, targetListId: s.target_list_id })),
-          shoppingLists
-        );
-        totalPushed += created;
-        if (created) log.info(`${created} locally created shopping item(s) uploaded to the server.`);
-      } catch (err) {
-        log.error(`Uploading local shopping items failed for account ${account.id}:`, err.message);
-      }
+
 
       // Umgezogene Einkaufsartikel nehmen ihr Objekt mit (#1700). Ebenfalls
       // nach dem Prune: die Zeile zeigt danach auf ein Objekt, das dieser Lauf
       // in der neuen Liste noch nicht gelesen hat.
-      try {
-        const targets = db.get().prepare(`
-          SELECT list_url, target_list_id FROM caldav_reminder_selection
-           WHERE account_id = ? AND enabled = 1 AND target_module = 'shopping' AND target_list_id IS NOT NULL
-        `).all(account.id);
-        const lists = new Map(
-          targets.map((s) => [s.list_url, serverCals.find((c) => c.url === s.list_url)]).filter(([, cal]) => cal)
-        );
-        const carried = await todoOutbound.processPendingShoppingMoves(
-          client,
-          account.id,
-          targets.map((s) => ({ listUrl: s.list_url, targetListId: s.target_list_id })),
-          lists,
-          { clientFor, stop }
-        );
-        totalPushed += carried;
-        if (carried) log.info(`${carried} moved shopping item(s) carried to their new list on the server.`);
-      } catch (err) {
-        log.error(`Carrying moved shopping items failed for account ${account.id}:`, err.message);
-      }
+
 
       db.get().prepare('UPDATE caldav_accounts SET last_sync = ? WHERE id = ?')
         .run(new Date().toISOString(), account.id);

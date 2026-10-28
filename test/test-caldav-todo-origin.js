@@ -160,14 +160,7 @@ test('Löschung, Sofortversuch und Lauf: kein DELETE an den Host aus der href', 
   assertForeignUntouched(foreignList);
 });
 
-test('Einkauf: Umzug in eine andere gespiegelte Liste nimmt nichts vom Host aus der href mit', async () => {
-  const { foreignList, row } = await mirrored('shopping');
-  const target = list('target', 'shopping');
-  db.prepare('UPDATE shopping_items SET list_id = ? WHERE id = ?').run(target.listId, row.id);
-  assert.equal(todoOutbound.moveShoppingMirror(row, target.listId), 'carry');
-  await todoOutbound.flushOutbound();
-  assertForeignUntouched(foreignList);
-});
+
 
 // ── Eine abgelehnte Adresse ist keine Absage des Servers ───────────────────────
 

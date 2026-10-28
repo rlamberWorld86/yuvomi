@@ -6,8 +6,7 @@ import {
   createDisclosure,
   createInfoList,
   createRetryState,
-  createSettingRow,
-  createStatusSummary
+  createSettingRow
 } from "/settings/components.js";
 import { reloadAfterSave } from '/utils/reload-after-save.js';
 
@@ -22,17 +21,6 @@ function showToast(message, tone = "default") {
   window.yuvomi?.showToast(message, tone);
 }
 
-function buildStatusSummary(data) {
-  const drive = data.google_drive ?? {};
-  return createStatusSummary({
-    title: t("documents.storageGoogleDrive"),
-    status: drive.sync?.folder_name || t("settings.documentStorageNotConfigured"),
-    details: [t("settings.documentStorageGoogleDriveCount") + ": " + Number(drive.document_count ?? 0)],
-    tone: drive.sync?.last_error ? "warning" : "neutral",
-    level: 2,
-  });
-}
-
 function renderPage(container) {
   container.replaceChildren();
   container.insertAdjacentHTML(
@@ -41,7 +29,6 @@ function renderPage(container) {
     <section class="settings-section">
       <div class="settings-card" id="document-storage-card">
         <div id="document-storage-banner"></div>
-        <p class="settings-card-description">${t("settings.documentStorageDriveSyncDescription")}</p>
         <div id="document-storage-status-host"></div>
         <div class="settings-providers" id="document-storage-providers-host"></div>
         <div id="document-storage-destination-host"></div>
@@ -58,16 +45,6 @@ function providerIcon(name) {
   return icon;
 }
 
-// Echte Warnung (amber): der Sachverhalt kann zu Datenverlust führen.
-function buildProviderWarning(text) {
-  const warning = document.createElement("p");
-  warning.className = "settings-document-storage-warning";
-  const label = document.createElement("span");
-  label.textContent = text;
-  warning.append(providerIcon("triangle-alert"), label);
-  return warning;
-}
-
 // Information, kein Alarm: ruhiger Ton, damit nicht zwei Warnboxen stapeln.
 function buildProviderNote(text, { icon = "info", hint = false } = {}) {
   const note = document.createElement("p");
@@ -81,30 +58,21 @@ function buildProviderNote(text, { icon = "info", hint = false } = {}) {
 // Führung, wenn die OAuth-Zugangsdaten fehlen: der Verbinden-Button ist dann
 // inaktiv - ohne diese Zeile bliebe unklar, wie man ihn aktiviert.
 function buildDriveSetupHint() {
-  const hint = buildProviderNote(t("settings.documentStorageGoogleDriveSetupHint") + " ", {
+  const hint = buildProviderNote(t("settings.driveConnectionSetup"), {
     icon: "key-round",
     hint: true
   });
-  const link = document.createElement("a");
-  link.href =
-    "https://github.com/ulsklyc/yuvomi/blob/main/docs/installation.md#google-drive-document-storage-optional";
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
-  link.textContent = t("settings.documentStorageGoogleDriveSetupLink");
-  hint.querySelector("span")?.appendChild(link);
   return hint;
 }
 
 function buildGoogleDriveSync(drive, reload) {
   const sync = drive.sync;
-  if (!sync?.available) return null;
+  if (!sync?.available || !drive.connected) return null;
   const section = document.createElement("section");
   section.className = "settings-provider";
   const title = document.createElement("h3");
   title.textContent = t("settings.documentStorageDriveSyncTitle");
   section.appendChild(title);
-  section.appendChild(buildProviderNote(t("settings.documentStorageDriveSyncDescription")));
-  section.appendChild(buildProviderNote(t("settings.documentStorageDriveSyncPrivacy")));
   if (sync.reconnect_required) section.appendChild(buildProviderNote(t("settings.documentStorageDriveSyncReconnect")));
   section.appendChild(createInfoList([
     { label: t("settings.documentStorageDriveSyncLast"), value: formatSyncTime(sync.last_sync) ?? t("settings.documentStorageNeverTested") },
@@ -191,33 +159,20 @@ function buildGoogleDriveProvider(data, reload) {
     ? t("settings.connected")
     : drive.configured
       ? t("settings.notConnected")
-      : t("settings.notConfigured");
+      : t("settings.documentStorageNotConfigured");
   status.appendChild(badge);
   provider.appendChild(status);
 
-  const description = document.createElement("p");
-  description.className = "settings-card-description";
-  description.textContent = t("settings.documentStorageGoogleDriveDescription");
-  provider.appendChild(description);
-  provider.appendChild(
+  if (drive.connected) provider.appendChild(
     createInfoList([
       { label: t("settings.documentStorageGoogleDriveAccount"), value: drive.account_email || "-" },
-      { label: t("settings.documentStorageGoogleDriveFolder"), value: drive.folder_name || "Yuvomi/Documents" },
       { label: t("settings.documentStorageGoogleDriveCount"), value: String(Number(drive.document_count ?? 0)) },
-      {
-        label: t("settings.documentStorageLastTest"),
-        value: formatSyncTime(drive.last_test) ?? t("settings.documentStorageNeverTested")
-      },
       drive.last_error
         ? { label: t("settings.documentStorageLastError"), value: drive.last_error, tone: "danger" }
         : null
     ])
   );
 
-  // Backup-Hinweis bleibt eine echte Warnung (DB-Backups sichern Drive-Metadaten,
-  // nicht die Binärdateien). Der Datenschutz-Hinweis ist Information, kein Alarm.
-  provider.appendChild(buildProviderWarning(t("settings.documentStorageBackupWarning")));
-  provider.appendChild(buildProviderNote(t("settings.documentStorageGoogleDrivePrivacy")));
   if (!drive.configured) provider.appendChild(buildDriveSetupHint());
 
   const actions = document.createElement("div");
@@ -335,7 +290,7 @@ async function loadDocumentStorageConfig(container) {
     return;
   }
 
-  statusHost.replaceChildren(buildStatusSummary(data));
+  statusHost.replaceChildren();
 
   const drive = createDisclosure({
     id: "document-storage-google-drive",

@@ -34,16 +34,10 @@ import * as outlookCalendar from './services/outlook-calendar.js';
 import * as carddavSync from './services/cardav-sync.js';
 import * as holidays from './services/holidays.js';
 import { startScheduler as startPushScheduler } from './services/push-scheduler.js';
-import { startScheduler as startRecipeProviderScheduler } from './services/recipe-provider-sync.js';
 import { emailService } from './services/email.js';
 import { passwordLoginWarning, OIDC_PASSWORD_SENTINEL } from './services/oidc.js';
 import dashboardRouter from './routes/dashboard.js';
 import tasksRouter from './routes/tasks.js';
-import shoppingRouter from './routes/shopping.js';
-import mealsRouter from './routes/meals.js';
-import recipesRouter from './routes/recipes.js';
-import pantryRouter from './routes/pantry.js';
-import kitchenRouter from './routes/kitchen.js';
 import calendarRouter from './routes/calendar.js';
 import notesRouter from './routes/notes.js';
 import quickLinksRouter from './routes/quick-links.js';
@@ -54,7 +48,6 @@ import * as birthdayIcs from './services/birthday-ics.js';
 import documentsRouter from './routes/documents.js';
 import googleDriveStorageRouter from './routes/document-storage-google-drive.js';
 import { checkLocalStorageMount } from './services/document-storage.js';
-import recipeProvidersRouter from './routes/recipe-providers.js';
 import preferencesRouter from './routes/preferences.js';
 import remindersRouter from './routes/reminders.js';
 import searchRouter from './routes/search.js';
@@ -74,7 +67,6 @@ import modulesRouter from './routes/modules.js';
 import pushRouter from './routes/push.js';
 import notificationsRouter from './routes/notifications.js';
 import permissionsRouter from './routes/permissions.js';
-import changelogRouter from './routes/changelog.js';
 import mcpRouter from './mcp/server.js';
 import { sessionModuleAccessRequirement, tokenAccessRequirement, tokenAllows } from './scopes.js';
 import { moduleAccessVerdict, MODULE_ACCESS_DENIED, MODULE_ACCESS_READ_ONLY } from './permissions.js';
@@ -209,7 +201,7 @@ app.use('/api/', (req, res, next) => {
 // sie bekommen deshalb einen eigenen, groesseren Topf (`imageLimiter`). Ein
 // 429 dort kostet ein Vorschaubild (der Platzhalter springt ein), nie die
 // Navigation. Die Anmelde-Limiter in server/auth.js bleiben, wie sie sind.
-const IMAGE_READ_PATH = /^\/v1\/(?:recipes\/\d+\/(?:image|provider-thumbnail)|people\/\d+\/avatar)\/?$/i;
+const IMAGE_READ_PATH = /^\/v1\/people\/\d+\/avatar\/?$/i;
 function isImageRead(req) {
   return (req.method === 'GET' || req.method === 'HEAD') && IMAGE_READ_PATH.test(req.path);
 }
@@ -565,7 +557,6 @@ app.use('/api/v1', requireAuth);
 app.use('/api/v1', trackAdmittedWrite);
 // System-Metadaten: authentifiziert, aber bewusst vor Guest-/Token-Scope-Gates
 // wie /version behandelt. Keine Haushaltsdaten, nur upstream Release Notes.
-app.use('/api/v1/changelog', changelogRouter);
 app.use('/api/v1', (req, res, next) => {
   try {
     const guest = db.get().prepare('SELECT 1 FROM split_expense_guest_users WHERE user_id = ?').get(req.authUserId);
@@ -707,13 +698,7 @@ app.use('/api/v1', (req, res, next) => {
 });
 app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1/tasks', tasksRouter);
-app.use('/api/v1/shopping', shoppingRouter);
-app.use('/api/v1/meals', mealsRouter);
-app.use('/api/v1/recipes', recipesRouter);
-app.use('/api/v1/recipe-providers', recipeProvidersRouter);
-app.use('/api/v1/pantry', pantryRouter);
 // Kreislauf-Zustand der vier Küchen-Tabs in einer Abfrage (utils/kitchen-tabs.js).
-app.use('/api/v1/kitchen', kitchenRouter);
 app.use('/api/v1/calendar', calendarRouter);
 app.use('/api/v1/notes', notesRouter);
 app.use('/api/v1/quick-links', quickLinksRouter);
@@ -888,7 +873,6 @@ const server = app.listen(PORT, BIND_ADDRESS, () => {
 
   // Backup-Scheduler starten
   startPushScheduler();
-  startRecipeProviderScheduler();
 });
 
 export default app;

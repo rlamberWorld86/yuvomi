@@ -239,15 +239,15 @@ const BUCKET_MODULE = Object.freeze({
   events: 'calendar',
   notes: 'notes',
   contacts: 'contacts',
-  items: 'shopping',
+
   meds: 'health',
   activities: 'health',
   waste: 'waste',
   // Ohne FTS-Index, ueber runTableSearch (Re-Critique 2026-09-27, A1 P2-6).
   // Rezepte gehoeren zum Rechte-Modul `meals` (Kueche), Geburtstage zu
   // `calendar` - dieselbe Zuordnung wie PERMISSION_MODULES.navIds.
-  recipes: 'meals',
-  pantry: 'pantry',
+
+
   inventory: 'inventory',
   documents: 'documents',
   birthdays: 'calendar',
@@ -268,12 +268,12 @@ const BUCKET_NAV = Object.freeze({
   events: 'calendar',
   notes: 'notes',
   contacts: 'contacts',
-  items: 'shopping',
+
   meds: 'health',
   activities: 'health',
   waste: 'waste',
-  recipes: 'recipes',
-  pantry: 'pantry',
+
+
   inventory: 'inventory',
   documents: 'documents',
   birthdays: 'birthdays',
@@ -495,14 +495,7 @@ export function runSearch(database, q, userId, { hiddenModules = null, disabledN
     LIMIT @limit
   `).all({ match, limit }).map((row) => withExcerpt(row, q, [row._body]));
 
-  if (allows('items')) results.items = database.prepare(`
-    SELECT i.id, i.name AS title, i.list_id, s.body AS _body
-    FROM search_index s
-    JOIN shopping_items i ON i.id = s.entity_id
-    WHERE s.entity = 'item' AND s.search_index MATCH @match
-    ORDER BY i.name ASC
-    LIMIT @limit
-  `).all({ match, limit }).map((row) => withExcerpt(row, q, [row._body]));
+
 
   // Health: Medikamente — Treffer auf Name/Dosistext, Sichtbarkeits-Scoping.
   if (allows('meds')) results.meds = database.prepare(`
@@ -593,22 +586,9 @@ export function runTableSearch(database, q, userId, { hiddenModules = null, disa
 
   // Rezepte: Haushaltsbesitz wie die Liste (GET /recipes filtert nicht),
   // gespiegelte Mealie/Tandoor-Rezepte eingeschlossen.
-  if (allows('recipes')) {
-    results.recipes = firstMatches(database.prepare(`
-      SELECT r.id, r.title, r.notes FROM recipes r
-      ORDER BY r.title COLLATE NOCASE ASC, r.id DESC
-    `).all(), matches, (r) => [r.title, r.notes], limit)
-      .map((r) => withExcerpt(pick(r, ['id', 'title']), q, [r.notes]));
-  }
 
-  if (allows('pantry')) {
-    results.pantry = firstMatches(database.prepare(`
-      SELECT p.id, p.name AS title, p.quantity, p.unit, p.expires_on, p.notes
-      FROM pantry_items p
-      ORDER BY p.name COLLATE NOCASE ASC, p.id ASC
-    `).all(), matches, (p) => [p.title, p.notes], limit)
-      .map((p) => withExcerpt(pick(p, ['id', 'title', 'quantity', 'unit', 'expires_on']), q, [p.notes]));
-  }
+
+
 
   // Inventar: aktive Gegenstaende zuerst, verkaufte/entsorgte bleiben
   // auffindbar (die Liste zeigt sie ueber den Statusfilter).
@@ -673,4 +653,4 @@ export function searchEverything(database, q, userId, opts = {}) {
 }
 
 /** Die Trefferarten, die runTableSearch fuellt - runSearch laesst sie leer. */
-export const TABLE_BUCKETS = Object.freeze(['recipes', 'pantry', 'inventory', 'documents', 'birthdays', 'budget']);
+export const TABLE_BUCKETS = Object.freeze([  'inventory', 'documents', 'birthdays', 'budget']);

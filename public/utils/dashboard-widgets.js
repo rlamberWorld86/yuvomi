@@ -41,7 +41,7 @@ import { EVENT_LIMIT_DEFAULT, clampEventLimit } from './dashboard-event-limit.js
  * unten), eine Umsortierung schaltet nichts mehr um. Die Default-Position ist
  * aber weiter der Ort, an dem ein Neuzugang erscheint, und der Guard
  * „eine fehlende Id landet an ihrer Default-Position" haelt das fest. */
-export const WIDGET_IDS = ['tasks', 'calendar', 'meals', 'shopping', 'pantry', 'birthdays', 'countdown', 'family', 'notes', 'clock', 'metrics', 'quicklinks'];
+export const WIDGET_IDS = ['tasks', 'calendar',    'birthdays', 'countdown', 'family', 'notes', 'clock', 'metrics', 'quicklinks'];
 
 // Vier kuratierte Formen statt sechs: über vier Auswahlmöglichkeiten pro Widget
 // (× bis zu 12 Widgets) kippt der Anpassen-Modus in Mikro-Entscheidungs-Overhead
@@ -108,9 +108,9 @@ export function defaultWidgetSize(id) {
   // avatar, name, shift - and left at the 1x1 default it rendered 318px against
   // the 218px the size class promised, stretching whatever shared its grid row
   // (PR #930 review).
-  // `pantry` („Laeuft bald ab") ist dieselbe Kachel wie die Geburtstage: eine
+
   // nach Naehe sortierte Liste aus Name und „noch so lange".
-  if (['tasks', 'calendar', 'rewards', 'budget', 'family', 'notes', 'birthdays', 'countdown', 'schedule', 'waste', 'pantry'].includes(id)) return '1x2';
+  if (['tasks', 'calendar', 'rewards', 'budget', 'family', 'notes', 'birthdays', 'countdown', 'schedule', 'waste'].includes(id)) return '1x2';
   // Die Uhr startet breit statt quadratisch: Uhrzeit und darunter der ausgeschriebene
   // Wochentag brauchen Zeile, nicht Höhe - auf 1x1 bräche das Datum um (#651).
   // `quicklinks` steht bei der Uhr und nicht bei den Listen: es ist eine ZEILE
@@ -119,7 +119,7 @@ export function defaultWidgetSize(id) {
   // `nutrition` steht hier und nicht bei den Listen: die Kachel zeigt eine
   // Fortschrittszeile je Naehrwert, also Balken nebeneinander - sie braucht
   // Zeile, nicht Hoehe, genau wie das Fasten daneben.
-  if (['weather', 'shopping', 'health', 'cycle', 'fasting', 'nutrition', 'meals', 'clock', 'quicklinks'].includes(id)) return '2x1';
+  if (['weather',  'health', 'cycle', 'fasting', 'nutrition',  'clock', 'quicklinks'].includes(id)) return '2x1';
   // DIE KENNZAHLREIHE IST EINE ZEILE, KEIN BLOCK (Critique 2026-08-13, P1).
   //
   // Hier stand '2x2' mit der Begruendung, das Raster sei der Vergleich, fuer den
@@ -140,7 +140,7 @@ export function defaultWidgetSize(id) {
 // Das „Heute"-Cockpit fasst diese vier Domänen bereits als Kurzüberblick zusammen.
 // Ihre Widgets starten deshalb ausgeblendet: kein Echo, keine Erststart-Überladung.
 // Über „Anpassen" jederzeit wieder einblendbar; Bestandskonfigurationen bleiben unberührt.
-export const COCKPIT_COVERED_WIDGETS = new Set(['tasks', 'calendar', 'shopping', 'meals']);
+export const COCKPIT_COVERED_WIDGETS = new Set(['tasks', 'calendar']);
 
 // Standardmäßig ausgeblendet: die vier vom Cockpit abgedeckten Domänen (kein Echo)
 // plus die spezialisierten Module und Widgets (unter anderem Health, fasting,
@@ -164,7 +164,7 @@ export const COCKPIT_COVERED_WIDGETS = new Set(['tasks', 'calendar', 'shopping',
 // Kosmetik - eine Id, die in dieser Menge FEHLT, ist nach dem Update in JEDEM
 // bestehenden Haushalt eingeblendet, weil `normalizeDashboardConfig` eine neu
 // bekannte Id mit `defaultWidgetVisible(id)` einsortiert.
-// `pantry` („Laeuft bald ab", Critique 2026-09-23) aus demselben Grund: nicht
+
 // jeder Haushalt fuehrt Mindesthaltbarkeiten, und ein frisches Dashboard mit
 // einer Kachel „nichts laeuft ab" waere die Ueberladung, die diese Menge
 // verhindern soll.
@@ -176,7 +176,7 @@ export const COCKPIT_COVERED_WIDGETS = new Set(['tasks', 'calendar', 'shopping',
 // gespeichert haben (keine Migration); nur wer der Vorgabe folgt oder ein
 // Layout ohne `budget` mitbringt, startet ohne. Die Kennzahlreihe fuehrt den
 // Saldo aus demselben Grund nicht mehr (METRIC_TILE_ORDER, pages/dashboard.js).
-export const DEFAULT_HIDDEN_WIDGETS = new Set([...COCKPIT_COVERED_WIDGETS, 'pantry', 'clock', 'quicklinks']);
+export const DEFAULT_HIDDEN_WIDGETS = new Set([...COCKPIT_COVERED_WIDGETS,  'clock', 'quicklinks']);
 
 export function defaultWidgetVisible(id) {
   return !DEFAULT_HIDDEN_WIDGETS.has(id);
@@ -510,19 +510,6 @@ export function sameWidgetConfig(a, b) {
  * @param {object[]} config normalisierte Widget-Konfiguration
  * @returns {string} '/dashboard' oder '/dashboard?…'
  */
-/**
- * Die gespeicherte Listen-Auswahl der Einkaufs-Kachel als Ids (#1818):
- * positive ganze Zahlen, ohne Doppelte. Was sonst im Layout steht (ein
- * Fremdwert, ein String aus aelterem Stand), faellt weg - dieselbe Form, die
- * die Route aus `?shopping_list=` liest.
- *
- * @param {unknown} value `options.lists`
- * @returns {number[]}
- */
-export function normalizeShoppingListSelection(value) {
-  if (!Array.isArray(value)) return [];
-  return [...new Set(value.map(Number).filter((id) => Number.isInteger(id) && id > 0))];
-}
 
 /**
  * Die gespeicherte Kalender-Auswahl der Kalender-Kachel als Schluessel (#2062):
@@ -558,9 +545,9 @@ export function dashboardQuery(config) {
   for (const id of optionsOf('notes').categories ?? []) params.append('notes_category', String(id));
   // Die Listen-Auswahl der Einkaufs-Kachel (#1818). Sie reist wie jede andere
   // Option, ob die Kachel sichtbar ist oder nicht: die Route legt die Auswahl
-  // in ein eigenes Feld (`shoppingTile`) und laesst alles andere unberuehrt,
+
   // also haengt keine Zahl ausserhalb der Kachel an ihr.
-  for (const id of normalizeShoppingListSelection(optionsOf('shopping').lists)) params.append('shopping_list', String(id));
+
   const query = params.toString();
   return query ? `/dashboard?${query}` : '/dashboard';
 }
@@ -632,25 +619,8 @@ export function forgetPendingReminders() {
   sharedPending = null;
 }
 
-/* WELCHE PARAMETER DIE ZAHLEN DER ANTWORT UNBERUEHRT LASSEN (#1680).
- *
- * Die Navigations-Badges und Modulkacheln nehmen die `/dashboard`-Antwort der
- * Seite nur an, wenn sie ungefiltert ist (router.js, `primeModuleCountsFrom`):
- * `tasks_category` aendert `openTaskCount`, und eine eingeschraenkte Zahl ist
- * eine andere Zahl. `events_limit` schraenkt nichts ein - es verlaengert eine
- * Liste, die in keine Zahl eingeht. Ohne diese Ausnahme galt jede Antwort mit
- * gewaehlter Stufe als gefiltert, und der Router holte anderthalb Sekunden
- * spaeter dieselbe Aggregation ein zweites Mal, bei jedem Kaltstart.
- *
- * `shopping_list` (#1818) steht aus demselben Grund hier: die Auswahl fuellt
- * ein eigenes Feld der Antwort (`shoppingTile`) und laesst `shoppingOpenCount`
- * unberuehrt - die Zahl, die Navigation und Kuechen-Kachel lesen.
- *
- * ALLOWLIST: was hier nicht steht, gilt als Filter. Ein neuer Parameter kostet
- * so hoechstens den zweiten Abruf, nie eine falsche Zahl. `events_scope` und
- * `events_birthdays` stehen bewusst nicht hier - sie waren vor #1680 schon
- * „gefiltert", und ob sie es bleiben, ist nicht Sache dieser Aenderung. */
-const COUNT_NEUTRAL_PARAMS = new Set(['events_limit', 'shopping_list']);
+
+const COUNT_NEUTRAL_PARAMS = new Set(['events_limit']);
 
 /**
  * @param {string} query Pfad der Uebersichts-Abfrage ('/dashboard' oder '/dashboard?…')
